@@ -1,0 +1,6 @@
+{
+  "name": "LogiFlows — Intelligent Logistics Platform",
+  "description": "Multi-tenant B2B courier and parcel delivery coordination platform with continuous custody, geospatial routing, dynamic ETA, and predictive delay intelligence.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
