@@ -209,10 +209,10 @@ export default function App() {
                 <div className="flex items-center justify-between">
                   <div>
                     <h2 className="text-xl font-bold text-slate-100">
-                      Geospatial Command & PostGIS Routing Map
+                      Geospatial Command & OpenRouteService (ORS) Routing
                     </h2>
                     <p className="text-xs text-slate-400">
-                      Real-time interactive fleet telemetry, sorting depots, and dynamic delivery routing paths.
+                      Real-time interactive fleet telemetry, OpenRouteService road directions, isochrone reachability zones, and sorting depots.
                     </p>
                   </div>
                 </div>

@@ -15,6 +15,8 @@ import {
 import { BranchHub, Vehicle, Parcel } from '../../types';
 import { MapDiagnosticsModal } from './MapDiagnosticsModal';
 import { storage } from '../../services/storage';
+import { OpenRouteServiceToolbox } from './OpenRouteServiceToolbox';
+import { OrsRouteResult, IsochronePolygon } from '../../services/openRouteService';
 
 interface Props {
   hubs: BranchHub[];
@@ -37,10 +39,13 @@ export const LogisticsMap: React.FC<Props> = ({
   const mapInstanceRef = useRef<L.Map | null>(null);
   const markersLayerRef = useRef<L.LayerGroup | null>(null);
   const routeLayerRef = useRef<L.LayerGroup | null>(null);
+  const orsLayerRef = useRef<L.LayerGroup | null>(null);
 
   const [showHubs, setShowHubs] = useState(true);
   const [showVehicles, setShowVehicles] = useState(true);
   const [showRoutes, setShowRoutes] = useState(true);
+  const [showOrsToolbox, setShowOrsToolbox] = useState(true);
+  const [activeOrsResult, setActiveOrsResult] = useState<OrsRouteResult | null>(null);
   const [isDiagnosticOpen, setIsDiagnosticOpen] = useState(false);
   const [isSimulatingMovement, setIsSimulatingMovement] = useState(false);
   const [mapError, setMapError] = useState<string | null>(null);
@@ -71,6 +76,7 @@ export const LogisticsMap: React.FC<Props> = ({
 
       markersLayerRef.current = L.layerGroup().addTo(map);
       routeLayerRef.current = L.layerGroup().addTo(map);
+      orsLayerRef.current = L.layerGroup().addTo(map);
 
       mapInstanceRef.current = map;
 
@@ -327,6 +333,68 @@ export const LogisticsMap: React.FC<Props> = ({
     }
   };
 
+  const handleApplyOrsRoute = (coords: [number, number][], meta: OrsRouteResult) => {
+    const map = mapInstanceRef.current;
+    const orsLayer = orsLayerRef.current;
+    if (!map || !orsLayer) return;
+
+    orsLayer.clearLayers();
+    setActiveOrsResult(meta);
+
+    // Render vivid highlight polyline for calculated ORS road route
+    const polyline = L.polyline(coords, {
+      color: '#38bdf8', // bright cyan
+      weight: 6,
+      opacity: 0.95,
+      lineCap: 'round',
+      lineJoin: 'round',
+    });
+
+    polyline.bindTooltip(
+      `OpenRouteService Corridor: ${meta.distanceKm} km · ${meta.durationMinutes} min ETA`,
+      { permanent: false, sticky: true }
+    );
+    orsLayer.addLayer(polyline);
+
+    // Zoom and pan to fit entire calculated corridor
+    map.fitBounds(polyline.getBounds(), { padding: [50, 50] });
+  };
+
+  const handleApplyIsochrone = (hub: BranchHub, polygons: IsochronePolygon[]) => {
+    const map = mapInstanceRef.current;
+    const orsLayer = orsLayerRef.current;
+    if (!map || !orsLayer) return;
+
+    orsLayer.clearLayers();
+    setActiveOrsResult(null);
+
+    // Render isochrone polygon bands from largest to smallest
+    [...polygons].reverse().forEach((poly) => {
+      const leafletPoly = L.polygon(poly.coordinates, {
+        color: poly.color,
+        fillColor: poly.color,
+        fillOpacity: 0.2,
+        weight: 2,
+        dashArray: '4, 4',
+      });
+
+      leafletPoly.bindTooltip(
+        `${hub.name}: ${poly.rangeSeconds / 60}-minute delivery reachability zone`,
+        { sticky: true }
+      );
+      orsLayer.addLayer(leafletPoly);
+    });
+
+    map.setView([hub.lat, hub.lng], 11);
+  };
+
+  const handleClearOrsOverlay = () => {
+    if (orsLayerRef.current) {
+      orsLayerRef.current.clearLayers();
+    }
+    setActiveOrsResult(null);
+  };
+
   return (
     <div className={`relative w-full rounded-xl overflow-hidden border border-slate-800 bg-slate-950 ${className}`}>
       {/* Map Error Banner (if any) */}
@@ -407,8 +475,21 @@ export const LogisticsMap: React.FC<Props> = ({
         </button>
       </div>
 
-      {/* Map Diagnostics Trigger (Resolves Part 7) */}
-      <div className="absolute top-3 right-3 z-10">
+      {/* Map Diagnostics & OpenRouteService Triggers */}
+      <div className="absolute top-3 right-3 z-10 flex items-center gap-2">
+        <button
+          onClick={() => setShowOrsToolbox(!showOrsToolbox)}
+          className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg shadow-xl backdrop-blur-md transition-colors ${
+            showOrsToolbox
+              ? 'bg-indigo-600 text-white border border-indigo-400'
+              : 'bg-slate-900/90 hover:bg-slate-800 text-indigo-300 border border-indigo-500/30'
+          }`}
+          title="Toggle OpenRouteService Engine"
+        >
+          <Navigation className="w-4 h-4 text-indigo-300" />
+          <span>OpenRouteService (ORS)</span>
+        </button>
+
         <button
           onClick={() => setIsDiagnosticOpen(true)}
           className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-slate-900/90 hover:bg-slate-800 text-indigo-300 border border-indigo-500/30 rounded-lg shadow-xl backdrop-blur-md transition-colors"
@@ -436,6 +517,21 @@ export const LogisticsMap: React.FC<Props> = ({
 
       {/* Leaflet DOM Mount */}
       <div ref={mapContainerRef} className="w-full h-full" />
+
+      {/* Floating OpenRouteService (ORS) Geospatial Operations Panel */}
+      {showOrsToolbox && (
+        <div className="absolute bottom-4 right-4 z-20 w-full max-w-xl max-h-[85%] overflow-y-auto shadow-2xl animate-fade-in">
+          <OpenRouteServiceToolbox
+            hubs={hubs}
+            vehicles={vehicles}
+            parcels={parcels}
+            onApplyRouteToMap={handleApplyOrsRoute}
+            onSelectHubIsochrone={handleApplyIsochrone}
+            onClearOverlay={handleClearOrsOverlay}
+            isOverlayActive={!!activeOrsResult}
+          />
+        </div>
+      )}
 
       {/* Map Diagnostics Audit Modal */}
       <MapDiagnosticsModal

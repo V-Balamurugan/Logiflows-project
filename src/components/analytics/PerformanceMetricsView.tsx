@@ -71,18 +71,92 @@ export const PerformanceMetricsView: React.FC = () => {
     return (sum / RAW_METRICS_DATA.length).toFixed(1);
   }, []);
 
+  const [isExportingCsv, setIsExportingCsv] = useState(false);
+  const [csvExportSuccess, setCsvExportSuccess] = useState(false);
+
+  const filteredMetricsData = useMemo(() => {
+    if (timeframe === '7D') return RAW_METRICS_DATA;
+    if (timeframe === '14D') {
+      const earlier = [
+        { date: 'Sep 28', volumeDispatched: 320, volumeDelivered: 315, successRate: 98.4, avgEtaHours: 3.6, targetSlaHours: 4.0, firstAttemptSuccess: 95.9 },
+        { date: 'Sep 29', volumeDispatched: 360, volumeDelivered: 355, successRate: 98.6, avgEtaHours: 3.4, targetSlaHours: 4.0, firstAttemptSuccess: 96.1 },
+        { date: 'Sep 30', volumeDispatched: 410, volumeDelivered: 405, successRate: 98.7, avgEtaHours: 3.3, targetSlaHours: 4.0, firstAttemptSuccess: 96.4 },
+        { date: 'Oct 01', volumeDispatched: 430, volumeDelivered: 422, successRate: 98.1, avgEtaHours: 3.7, targetSlaHours: 4.0, firstAttemptSuccess: 95.3 },
+        { date: 'Oct 02', volumeDispatched: 450, volumeDelivered: 442, successRate: 98.2, avgEtaHours: 3.5, targetSlaHours: 4.0, firstAttemptSuccess: 95.8 },
+        { date: 'Oct 03', volumeDispatched: 395, volumeDelivered: 390, successRate: 98.7, avgEtaHours: 3.2, targetSlaHours: 4.0, firstAttemptSuccess: 96.7 },
+        { date: 'Oct 04', volumeDispatched: 330, volumeDelivered: 326, successRate: 98.8, avgEtaHours: 3.3, targetSlaHours: 4.0, firstAttemptSuccess: 96.9 },
+      ];
+      return [...earlier, ...RAW_METRICS_DATA];
+    }
+    // 30D expanded set
+    const monthData = [];
+    for (let day = 12; day <= 30; day++) {
+      monthData.push({
+        date: `Sep ${day < 10 ? '0' + day : day}`,
+        volumeDispatched: 310 + ((day * 13) % 180),
+        volumeDelivered: 304 + ((day * 13) % 176),
+        successRate: +(97.5 + ((day * 7) % 20) / 10).toFixed(1),
+        avgEtaHours: +(3.0 + ((day * 3) % 10) / 10).toFixed(1),
+        targetSlaHours: 4.0,
+        firstAttemptSuccess: +(94.8 + ((day * 5) % 30) / 10).toFixed(1),
+      });
+    }
+    return [...monthData, ...RAW_METRICS_DATA];
+  }, [timeframe]);
+
   const handleExportCsv = () => {
-    const headers = 'Date,Dispatched,Delivered,SuccessRatePct,AvgEtaHours\n';
-    const rows = RAW_METRICS_DATA.map(
-      (d) => `${d.date},${d.volumeDispatched},${d.volumeDelivered},${d.successRate},${d.avgEtaHours}`
-    ).join('\n');
-    const blob = new Blob([headers + rows], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `logiflows-metrics-${timeframe.toLowerCase()}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    setIsExportingCsv(true);
+    setCsvExportSuccess(false);
+
+    try {
+      const headers = [
+        'Report Date',
+        'Tenant Code',
+        'Timeframe Scope',
+        'Dispatched Packages',
+        'Successfully Delivered',
+        'On-Time SLA Rate (%)',
+        'Avg Transit ETA (Hours)',
+        'SLA Ceiling Target (Hours)',
+        'First-Attempt Success Rate (%)',
+        'Returned To Depot (%)'
+      ].join(',') + '\n';
+
+      const tenantCode = tenant?.code || 'LOGIFLOWS-GLOBAL';
+
+      const rows = filteredMetricsData.map((d) => {
+        const returnRate = (100 - d.successRate).toFixed(1);
+        return [
+          `"${d.date}"`,
+          `"${tenantCode}"`,
+          `"${timeframe}"`,
+          d.volumeDispatched,
+          d.volumeDelivered,
+          d.successRate,
+          d.avgEtaHours,
+          d.targetSlaHours,
+          d.firstAttemptSuccess,
+          returnRate
+        ].join(',');
+      }).join('\n');
+
+      const blob = new Blob([headers + rows], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `logiflows-management-analytics-${timeframe.toLowerCase()}-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      setCsvExportSuccess(true);
+      setTimeout(() => setCsvExportSuccess(false), 3000);
+    } catch (err) {
+      console.error('Failed generating CSV export:', err);
+    } finally {
+      setIsExportingCsv(false);
+    }
   };
 
   return (
@@ -121,10 +195,16 @@ export const PerformanceMetricsView: React.FC = () => {
 
           <button
             onClick={handleExportCsv}
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-200 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg transition-colors"
+            disabled={isExportingCsv}
+            className={`inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-lg transition-colors border shadow-sm ${
+              csvExportSuccess
+                ? 'bg-emerald-950 text-emerald-300 border-emerald-700'
+                : 'text-slate-200 bg-slate-800 hover:bg-slate-700 border-slate-700'
+            }`}
+            title="Download complete daily volume and success rate analytics CSV for management review"
           >
-            <Download className="w-3.5 h-3.5 text-indigo-400" />
-            <span>Export CSV</span>
+            <Download className={`w-3.5 h-3.5 ${csvExportSuccess ? 'text-emerald-400' : 'text-indigo-400'} ${isExportingCsv ? 'animate-bounce' : ''}`} />
+            <span>{csvExportSuccess ? 'CSV Exported!' : isExportingCsv ? 'Generating CSV...' : 'Download CSV'}</span>
           </button>
         </div>
       </div>

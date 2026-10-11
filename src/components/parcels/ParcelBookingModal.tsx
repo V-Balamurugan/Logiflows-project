@@ -15,6 +15,8 @@ import { PackageType, ServiceTier, Parcel } from '../../types';
 import { storage } from '../../services/storage';
 import { checkHubServiceability } from '../../services/serviceabilityService';
 import { predictParcelDelay } from '../../services/aiPredictionService';
+import { ShippingCostEstimator } from './ShippingCostEstimator';
+import { shippingRateService, ShippingCostQuote } from '../../services/shippingRateService';
 
 interface Props {
   isOpen: boolean;
@@ -61,6 +63,16 @@ export const ParcelBookingModal: React.FC<Props> = ({ isOpen, onClose, onSuccess
   const [step, setStep] = useState<1 | 2>(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Distance and Shipping Cost Estimator State
+  const [customDistanceKm, setCustomDistanceKm] = useState<number | null>(null);
+  const [activeQuote, setActiveQuote] = useState<ShippingCostQuote | null>(null);
+
+  // Computed Corridor Distance
+  const effectiveDistanceKm = useMemo(() => {
+    if (customDistanceKm !== null) return customDistanceKm;
+    return shippingRateService.estimateDistance(senderPostal, recipientPostal, senderCity, recipientCity);
+  }, [customDistanceKm, senderPostal, recipientPostal, senderCity, recipientCity]);
+
   // Compute live serviceability & rate
   const serviceability = useMemo(() => {
     return checkHubServiceability(recipientPostal, recipientCity, hubs, packageType, serviceTier, weightKg);
@@ -69,13 +81,13 @@ export const ParcelBookingModal: React.FC<Props> = ({ isOpen, onClose, onSuccess
   // Compute live AI delay risk prediction
   const predictedDelay = useMemo(() => {
     return predictParcelDelay({
-      distanceKm: serviceability.distanceKm,
+      distanceKm: effectiveDistanceKm,
       originHubCurrentLoadPct: 75,
       destHubCurrentLoadPct: 68,
       packageType,
       serviceTier,
     });
-  }, [serviceability.distanceKm, packageType, serviceTier]);
+  }, [effectiveDistanceKm, packageType, serviceTier]);
 
   if (!isOpen) return null;
 
@@ -143,9 +155,11 @@ export const ParcelBookingModal: React.FC<Props> = ({ isOpen, onClose, onSuccess
       },
       declaredValueUsd,
       specialInstructions,
-      estimatedDeliveryDate: new Date(Date.now() + serviceability.estimatedTransitHours * 3600 * 1000).toISOString(),
+      estimatedDeliveryDate: new Date(
+        Date.now() + (activeQuote?.estimatedTransitHours || serviceability.estimatedTransitHours) * 3600 * 1000
+      ).toISOString(),
       delayRisk: predictedDelay,
-      shippingFeeUsd: serviceability.baseShippingCostUsd,
+      shippingFeeUsd: activeQuote ? activeQuote.totalUsd : serviceability.baseShippingCostUsd,
     });
 
     try {
@@ -202,19 +216,27 @@ export const ParcelBookingModal: React.FC<Props> = ({ isOpen, onClose, onSuccess
         <div className="flex border-b border-slate-800 bg-slate-950/40 text-xs">
           <button
             onClick={() => setStep(1)}
-            className={`flex-1 py-2.5 px-4 text-center font-medium transition-colors border-b-2 ${
+            className={`flex-1 py-2.5 px-4 text-center font-medium transition-colors border-b-2 flex items-center justify-center gap-2 ${
               step === 1 ? 'border-indigo-500 text-indigo-400 bg-indigo-500/5' : 'border-transparent text-slate-400 hover:text-slate-200'
             }`}
           >
-            1. Origin & Recipient Route
+            <span>1. Origin & Recipient Route</span>
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 font-mono">
+              ~{effectiveDistanceKm} km
+            </span>
           </button>
           <button
             onClick={() => setStep(2)}
-            className={`flex-1 py-2.5 px-4 text-center font-medium transition-colors border-b-2 ${
+            className={`flex-1 py-2.5 px-4 text-center font-medium transition-colors border-b-2 flex items-center justify-center gap-2 ${
               step === 2 ? 'border-indigo-500 text-indigo-400 bg-indigo-500/5' : 'border-transparent text-slate-400 hover:text-slate-200'
             }`}
           >
-            2. Specifications, AI Quote & Dispatch
+            <span>2. Specifications & Cost Estimator</span>
+            {activeQuote && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-mono font-bold border border-emerald-500/20">
+                ${activeQuote.totalUsd.toFixed(2)}
+              </span>
+            )}
           </button>
         </div>
 
@@ -470,45 +492,62 @@ export const ParcelBookingModal: React.FC<Props> = ({ isOpen, onClose, onSuccess
                 </div>
               </div>
 
-              {/* Live Quotation & AI Intelligence Box */}
-              <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 space-y-3">
+              {/* Real-Time Shipping Cost Estimator (Mock Rate Service Engine) */}
+              <ShippingCostEstimator
+                dimensions={{ lengthCm, widthCm, heightCm }}
+                onDimensionsChange={(newDims) => {
+                  setLengthCm(newDims.lengthCm);
+                  setWidthCm(newDims.widthCm);
+                  setHeightCm(newDims.heightCm);
+                }}
+                weightKg={weightKg}
+                onWeightChange={setWeightKg}
+                distanceKm={effectiveDistanceKm}
+                onDistanceChange={(dist) => setCustomDistanceKm(dist)}
+                packageType={packageType}
+                serviceTier={serviceTier}
+                onServiceTierChange={setServiceTier}
+                declaredValueUsd={declaredValueUsd}
+                originCity={`${senderCity}, ${senderState}`}
+                destinationCity={`${recipientCity}, ${recipientState}`}
+                onQuoteCalculated={setActiveQuote}
+              />
+
+              {/* Predictive Logistics AI Risk Assessment Card */}
+              <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 space-y-2.5">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2 text-xs font-semibold text-slate-200">
                     <Sparkles className="w-4 h-4 text-indigo-400" />
-                    <span>Real-Time Logistics Engine Evaluation</span>
+                    <span>Predictive Route Reliability & Transit Health</span>
                   </div>
-                  <span className="text-xs font-mono text-emerald-400 flex items-center gap-1">
-                    <CheckCircle2 className="w-3.5 h-3.5" /> PostGIS Serviceable
+                  <span className="text-[10px] font-mono text-emerald-400 flex items-center gap-1 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                    <CheckCircle2 className="w-3 h-3" /> PostGIS Corridor Verified
                   </span>
                 </div>
 
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-2 text-xs">
-                  <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800">
-                    <span className="text-[10px] text-slate-400 block">Calculated Distance</span>
-                    <span className="font-mono text-slate-100 font-bold">{serviceability.distanceKm} km</span>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5 text-xs">
+                  <div className="p-2 rounded-lg bg-slate-900 border border-slate-800">
+                    <span className="text-[10px] text-slate-400 block">Corridor Span</span>
+                    <span className="font-mono text-slate-100 font-bold">{effectiveDistanceKm} km</span>
                   </div>
-                  <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800">
-                    <span className="text-[10px] text-slate-400 block">Estimated SLA</span>
-                    <span className="font-mono text-slate-100 font-bold">~{serviceability.estimatedTransitHours} hrs</span>
+                  <div className="p-2 rounded-lg bg-slate-900 border border-slate-800">
+                    <span className="text-[10px] text-slate-400 block">Transit SLA Window</span>
+                    <span className="font-mono text-slate-100 font-bold">
+                      ~{activeQuote?.estimatedTransitHours || serviceability.estimatedTransitHours} hrs
+                    </span>
                   </div>
-                  <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800">
+                  <div className="p-2 rounded-lg bg-slate-900 border border-slate-800">
                     <span className="text-[10px] text-slate-400 block">AI Delay Forecast</span>
                     <span className={`font-mono font-bold ${
                       predictedDelay.level === 'HIGH' ? 'text-rose-400' : predictedDelay.level === 'MEDIUM' ? 'text-amber-400' : 'text-emerald-400'
                     }`}>
-                      {predictedDelay.level} Risk
-                    </span>
-                  </div>
-                  <div className="p-2.5 rounded-lg bg-slate-900 border border-indigo-500/30">
-                    <span className="text-[10px] text-indigo-300 block">Commercial Rate</span>
-                    <span className="font-mono text-indigo-300 font-bold text-sm">
-                      ${serviceability.baseShippingCostUsd.toFixed(2)}
+                      {predictedDelay.level} Risk ({predictedDelay.confidenceScore}% conf)
                     </span>
                   </div>
                 </div>
 
                 <p className="text-[11px] text-slate-400 leading-tight">
-                  {predictedDelay.primaryRiskFactor} Recommended: {predictedDelay.recommendedMitigation}
+                  <span className="text-slate-300 font-medium">Mitigation Protocol:</span> {predictedDelay.primaryRiskFactor}. {predictedDelay.recommendedMitigation}
                 </p>
               </div>
             </div>
@@ -543,10 +582,12 @@ export const ParcelBookingModal: React.FC<Props> = ({ isOpen, onClose, onSuccess
                 type="button"
                 onClick={handleSubmit}
                 disabled={isSubmitting}
-                className="inline-flex items-center gap-1.5 px-5 py-2 text-xs font-medium text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg transition-colors disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 px-5 py-2 text-xs font-medium text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg transition-colors disabled:opacity-50 shadow-md shadow-emerald-950/40"
               >
                 <CheckCircle2 className="w-4 h-4" />
-                <span>Confirm Booking & Generate QR Identity</span>
+                <span>
+                  Confirm Booking (${(activeQuote?.totalUsd ?? serviceability.baseShippingCostUsd).toFixed(2)}) & Generate QR Identity
+                </span>
               </button>
             </>
           )}
