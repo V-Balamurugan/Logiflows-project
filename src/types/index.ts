@@ -229,9 +229,31 @@ export interface Parcel {
     heading?: number;
   };
   custodyEvents: CustodyEvent[];
+  custodyDocuments?: CustodyDocument[];
   delayRisk: DelayRiskAssessment;
   proofOfDelivery?: ProofOfDelivery;
   shippingFeeUsd: number;
+}
+
+export type CustodyDocumentType = 
+  | 'DIGITAL_DELIVERY_SIGNATURE'
+  | 'CUSTOMS_CLEARANCE_FORM'
+  | 'CHAIN_OF_CUSTODY_TRANSFER'
+  | 'BILL_OF_LADING'
+  | 'INSPECTION_PHOTO';
+
+export interface CustodyDocument {
+  id: string;
+  parcelId: string;
+  documentType: CustodyDocumentType;
+  documentName: string;
+  fileDataUrl: string;
+  uploadedAt: string;
+  uploadedByName: string;
+  uploadedByRole: string;
+  fileSizeKb: number;
+  verificationHash: string;
+  notes?: string;
 }
 
 export interface MicroserviceNode {

@@ -7,7 +7,8 @@ import {
   ChevronDown, 
   Building2, 
   Plus,
-  Bell
+  Bell,
+  Menu
 } from 'lucide-react';
 import { User, UserRole } from '../../types';
 import { storage } from '../../services/storage';
@@ -18,6 +19,8 @@ interface Props {
   onOpenTopology: () => void;
   onNavigatePublicTracking: () => void;
   onOpenNotifications: () => void;
+  isOpenMobile?: boolean;
+  onToggleMobileMenu?: () => void;
   activeView: string;
   setActiveView: (view: string) => void;
 }
@@ -28,6 +31,8 @@ export const Header: React.FC<Props> = ({
   onOpenTopology,
   onNavigatePublicTracking,
   onOpenNotifications,
+  isOpenMobile,
+  onToggleMobileMenu,
   activeView,
   setActiveView,
 }) => {
@@ -60,9 +65,17 @@ export const Header: React.FC<Props> = ({
   };
 
   return (
-    <header className="sticky top-0 z-40 flex items-center justify-between gap-8 px-6 py-3.5 bg-slate-900/90 backdrop-blur-md border-b border-slate-800">
+    <header className="sticky top-0 z-40 flex items-center justify-between gap-4 sm:gap-8 px-3.5 sm:px-6 py-3 sm:py-3.5 bg-slate-900/90 backdrop-blur-md border-b border-slate-800">
       {/* Zone 1: Brand Wordmark (Single text element wordmark) */}
-      <div className="flex items-center gap-3 shrink-0">
+      <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+        {/* Mobile Sidebar Hamburger Toggle */}
+        <button
+          onClick={onToggleMobileMenu}
+          className="lg:hidden p-1.5 -ml-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
+          aria-label="Toggle navigation menu"
+        >
+          <Menu className="w-5 h-5" />
+        </button>
         <a 
           href="#home" 
           onClick={(e) => {

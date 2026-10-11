@@ -24,6 +24,8 @@ interface Props {
   onOpenScanner: () => void;
   onOpenTopology: () => void;
   onOpenTracking: () => void;
+  isOpenMobile?: boolean;
+  onCloseMobile?: () => void;
 }
 
 export const Sidebar: React.FC<Props> = ({
@@ -33,6 +35,8 @@ export const Sidebar: React.FC<Props> = ({
   onOpenScanner,
   onOpenTopology,
   onOpenTracking,
+  isOpenMobile,
+  onCloseMobile,
 }) => {
   const tenants = storage.getTenants();
   const currentTenantId = storage.getActiveTenantId();
@@ -106,84 +110,127 @@ export const Sidebar: React.FC<Props> = ({
 
   const visibleItems = navItems.filter((item) => item.roles.includes(currentUser.role));
 
+  const handleItemClick = (id: string) => {
+    setActiveView(id);
+    onCloseMobile?.();
+  };
+
   return (
-    <aside className="w-64 bg-slate-900/60 border-r border-slate-800 flex flex-col shrink-0 select-none">
-      {/* Tenant Context Selector (For Admin / Owner) */}
-      {(currentUser.role === 'PLATFORM_ADMIN' || currentUser.role === 'TENANT_OWNER') && (
-        <div className="p-4 border-b border-slate-800/80">
-          <label className="block text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
-            Logistics Tenant Scope
-          </label>
-          <div className="relative">
-            <select
-              value={currentTenantId}
-              onChange={handleTenantChange}
-              className="w-full pl-3 pr-8 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-xs font-medium text-slate-200 focus:outline-none focus:border-indigo-500 cursor-pointer"
-            >
-              {tenants.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name} ({t.code})
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
+    <>
+      {/* Mobile Backdrop */}
+      {isOpenMobile && (
+        <div
+          className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-30 lg:hidden animate-fade-in"
+          onClick={onCloseMobile}
+        />
       )}
 
-      {/* Primary Navigation Links */}
-      <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-        <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-          Core Workflows
-        </div>
-        {visibleItems.map((item) => {
-          const isActive = activeView === item.id;
-          return (
-            <button
-              key={item.id}
-              onClick={() => setActiveView(item.id)}
-              className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-colors text-left ${
-                isActive
-                  ? 'bg-indigo-600/15 text-indigo-400 font-semibold'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
-              }`}
-            >
-              <span className={isActive ? 'text-indigo-400' : 'text-slate-400'}>{item.icon}</span>
-              <span className="truncate">{item.label}</span>
-            </button>
-          );
-        })}
-
-        <div className="pt-4 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-          Utilities & Operations
+      <aside
+        className={`fixed inset-y-0 left-0 z-40 w-64 bg-slate-900 border-r border-slate-800 flex flex-col shrink-0 select-none transition-transform duration-200 ease-in-out lg:static lg:translate-x-0 ${
+          isOpenMobile ? 'translate-x-0 shadow-2xl' : '-translate-x-full lg:translate-x-0'
+        }`}
+      >
+        {/* Mobile Sidebar Close Header */}
+        <div className="flex items-center justify-between p-3 border-b border-slate-800 lg:hidden">
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 rounded bg-indigo-600 flex items-center justify-center font-mono font-black text-white text-xs">
+              LF
+            </div>
+            <span className="text-xs font-bold text-slate-200">LogiFlows Menu</span>
+          </div>
+          <button
+            onClick={onCloseMobile}
+            className="p-1 text-slate-400 hover:text-white rounded"
+          >
+            ✕
+          </button>
         </div>
 
-        {/* Optical Scanner Trigger */}
-        <button
-          onClick={onOpenScanner}
-          className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 transition-colors text-left"
-        >
-          <QrCode className="w-4 h-4 text-emerald-400" />
-          <span>Optical QR Scanner</span>
-        </button>
+        {/* Tenant Context Selector (For Admin / Owner) */}
+        {(currentUser.role === 'PLATFORM_ADMIN' || currentUser.role === 'TENANT_OWNER') && (
+          <div className="p-4 border-b border-slate-800/80">
+            <label className="block text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
+              Logistics Tenant Scope
+            </label>
+            <div className="relative">
+              <select
+                value={currentTenantId}
+                onChange={handleTenantChange}
+                className="w-full pl-3 pr-8 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-xs font-medium text-slate-200 focus:outline-none focus:border-indigo-500 cursor-pointer"
+              >
+                {tenants.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name} ({t.code})
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
 
-        {/* Public Tracking Search */}
-        <button
-          onClick={onOpenTracking}
-          className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 transition-colors text-left"
-        >
-          <Search className="w-4 h-4 text-indigo-400" />
-          <span>Public Tracking Portal</span>
-        </button>
+        {/* Primary Navigation Links */}
+        <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
+          <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+            Core Workflows
+          </div>
+          {visibleItems.map((item) => {
+            const isActive = activeView === item.id;
+            return (
+              <button
+                key={item.id}
+                onClick={() => handleItemClick(item.id)}
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-colors text-left ${
+                  isActive
+                    ? 'bg-indigo-600/15 text-indigo-400 font-semibold'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                }`}
+              >
+                <span className={isActive ? 'text-indigo-400' : 'text-slate-400'}>{item.icon}</span>
+                <span className="truncate">{item.label}</span>
+              </button>
+            );
+          })}
 
-        {/* Scalable Microservices Architecture Inspector */}
-        <button
-          onClick={onOpenTopology}
-          className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 transition-colors text-left"
-        >
-          <Layers className="w-4 h-4 text-cyan-400" />
-          <span>Microservices Topology</span>
-        </button>
-      </nav>
+          <div className="pt-4 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+            Utilities & Operations
+          </div>
+
+          {/* Optical Scanner Trigger */}
+          <button
+            onClick={() => {
+              onOpenScanner();
+              onCloseMobile?.();
+            }}
+            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 transition-colors text-left"
+          >
+            <QrCode className="w-4 h-4 text-emerald-400" />
+            <span>Optical QR Scanner</span>
+          </button>
+
+          {/* Public Tracking Search */}
+          <button
+            onClick={() => {
+              onOpenTracking();
+              onCloseMobile?.();
+            }}
+            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 transition-colors text-left"
+          >
+            <Search className="w-4 h-4 text-indigo-400" />
+            <span>Public Tracking Portal</span>
+          </button>
+
+          {/* Scalable Microservices Architecture Inspector */}
+          <button
+            onClick={() => {
+              onOpenTopology();
+              onCloseMobile?.();
+            }}
+            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 transition-colors text-left"
+          >
+            <Layers className="w-4 h-4 text-cyan-400" />
+            <span>Microservices Topology</span>
+          </button>
+        </nav>
 
       {/* Bottom Infrastructure Telemetry Card */}
       <div className="p-3 border-t border-slate-800 bg-slate-950/40">
@@ -203,5 +250,6 @@ export const Sidebar: React.FC<Props> = ({
         </div>
       </div>
     </aside>
+    </>
   );
 };

@@ -37,6 +37,7 @@ export default function App() {
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [isTopologyOpen, setIsTopologyOpen] = useState(false);
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // Subscribe to storage changes
   useEffect(() => {
@@ -160,6 +161,8 @@ export default function App() {
         onOpenTopology={() => setIsTopologyOpen(true)}
         onNavigatePublicTracking={() => setActiveView('public-tracking')}
         onOpenNotifications={() => setIsNotificationOpen(true)}
+        isOpenMobile={isMobileMenuOpen}
+        onToggleMobileMenu={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
         activeView={activeView}
         setActiveView={setActiveView}
       />
@@ -170,6 +173,8 @@ export default function App() {
           currentUser={currentUser}
           activeView={activeView}
           setActiveView={setActiveView}
+          isOpenMobile={isMobileMenuOpen}
+          onCloseMobile={() => setIsMobileMenuOpen(false)}
           onOpenScanner={() => setIsScannerOpen(true)}
           onOpenTopology={() => setIsTopologyOpen(true)}
           onOpenTracking={() => setActiveView('public-tracking')}

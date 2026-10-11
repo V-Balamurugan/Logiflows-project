@@ -12,7 +12,8 @@ import {
   MicroserviceNode, 
   MapDiagnosticState,
   DelayRiskAssessment,
-  AppNotification
+  AppNotification,
+  CustodyDocument
 } from '../types';
 import { 
   INITIAL_USERS, 
@@ -581,6 +582,64 @@ export class LogisticsStorageService {
   public clearNotifications(): void {
     localStorage.setItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify([]));
     this.notify();
+  }
+
+  // --- Continuous Custody Documents Engine ---
+  public attachCustodyDocument(
+    parcelId: string, 
+    docData: Omit<CustodyDocument, 'id' | 'uploadedAt' | 'verificationHash' | 'uploadedByName' | 'uploadedByRole'>
+  ): CustodyDocument | null {
+    const raw = localStorage.getItem(STORAGE_KEYS.PARCELS);
+    const parcels: Parcel[] = raw ? JSON.parse(raw) : [];
+    const index = parcels.findIndex((p) => p.id === parcelId);
+    if (index === -1) return null;
+
+    const user = this.getCurrentUser();
+    const verificationHash = generateVerificationHash();
+    const docId = `doc-${Date.now().toString(36)}-${Math.floor(Math.random() * 1000)}`;
+
+    const newDoc: CustodyDocument = {
+      ...docData,
+      id: docId,
+      uploadedAt: new Date().toISOString(),
+      uploadedByName: user.name,
+      uploadedByRole: user.role,
+      verificationHash,
+    };
+
+    if (!parcels[index].custodyDocuments) {
+      parcels[index].custodyDocuments = [];
+    }
+    parcels[index].custodyDocuments!.unshift(newDoc);
+
+    // Record immutable Custody Event audit log entry
+    const auditEvent: CustodyEvent = {
+      id: `evt-${Date.now().toString(36)}`,
+      parcelId,
+      timestamp: new Date().toISOString(),
+      eventType: 'CARRIER_ACCEPTED',
+      locationName: 'Continuous Custody Documentation Station',
+      operatorName: user.name,
+      operatorRole: user.role,
+      operatorId: user.id,
+      notes: `Continuous Custody document attached: "${newDoc.documentName}" (${newDoc.documentType.replace(/_/g, ' ')}). Doc integrity hash: #${verificationHash}.`,
+      verificationHash,
+    };
+
+    parcels[index].custodyEvents.push(auditEvent);
+    localStorage.setItem(STORAGE_KEYS.PARCELS, JSON.stringify(parcels));
+
+    this.addNotification({
+      title: 'Custody Document Attached',
+      message: `Document "${newDoc.documentName}" was cryptographically attached to parcel ${parcels[index].trackingNumber}.`,
+      category: 'STATUS_CHANGE',
+      parcelId,
+      trackingNumber: parcels[index].trackingNumber,
+      severity: 'INFO',
+    });
+
+    this.notify();
+    return newDoc;
   }
 }
 
