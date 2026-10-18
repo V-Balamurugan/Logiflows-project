@@ -15,6 +15,7 @@ import { storage } from '../../services/storage';
 import { LogisticsMap } from '../map/LogisticsMap';
 import { Parcel } from '../../types';
 import { PredictiveDelayWidget } from '../intelligence/PredictiveDelayWidget';
+import { WeatherAdjustedEtaModule } from '../intelligence/WeatherAdjustedEtaModule';
 
 interface Props {
   onSelectParcel: (parcel: Parcel) => void;
@@ -172,6 +173,9 @@ export const TenantOwnerDashboard: React.FC<Props> = ({
           className="h-[460px]"
         />
       </div>
+
+      {/* Weather-Adjusted Dynamic ETA Module & Meteorological Predictive Scoring */}
+      <WeatherAdjustedEtaModule />
 
       {/* AI Delay Intelligence & Proactive Alternative Routing */}
       <PredictiveDelayWidget />

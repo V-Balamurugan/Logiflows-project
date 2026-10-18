@@ -22,7 +22,10 @@ import { MicroservicesTopologyModal } from './components/architecture/Microservi
 import { ParcelDetailModal } from './components/parcels/ParcelDetailModal';
 import { PerformanceMetricsView } from './components/analytics/PerformanceMetricsView';
 import { PredictiveDelayWidget } from './components/intelligence/PredictiveDelayWidget';
+import { WeatherAdjustedEtaModule } from './components/intelligence/WeatherAdjustedEtaModule';
+import { DelayThresholdConfigModal } from './components/intelligence/DelayThresholdConfigModal';
 import { NotificationPanel } from './components/notifications/NotificationPanel';
+import { OfflineSyncModal } from './components/sync/OfflineSyncModal';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User>(() => storage.getCurrentUser());
@@ -37,6 +40,7 @@ export default function App() {
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [isTopologyOpen, setIsTopologyOpen] = useState(false);
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
+  const [isOfflineSyncOpen, setIsOfflineSyncOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // Subscribe to storage changes
@@ -129,6 +133,7 @@ export default function App() {
             onOpenBooking={() => setIsBookingOpen(true)}
             onOpenScanner={() => setIsScannerOpen(true)}
             onPrintLabel={handleOpenLabel}
+            onNavigateFleet={() => setActiveView('fleet')}
           />
         );
       case 'COURIER':
@@ -137,6 +142,7 @@ export default function App() {
             onOpenScanner={() => setIsScannerOpen(true)}
             onOpenPod={handleOpenPod}
             onSelectParcel={handleOpenDetail}
+            onOpenOfflineSync={() => setIsOfflineSyncOpen(true)}
           />
         );
       case 'CUSTOMER':
@@ -161,6 +167,7 @@ export default function App() {
         onOpenTopology={() => setIsTopologyOpen(true)}
         onNavigatePublicTracking={() => setActiveView('public-tracking')}
         onOpenNotifications={() => setIsNotificationOpen(true)}
+        onOpenOfflineSync={() => setIsOfflineSyncOpen(true)}
         isOpenMobile={isMobileMenuOpen}
         onToggleMobileMenu={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
         activeView={activeView}
@@ -185,15 +192,20 @@ export default function App() {
             {activeView === 'dashboard' && renderDashboard()}
             {activeView === 'metrics' && <PerformanceMetricsView />}
             {activeView === 'delay-intelligence' && (
-              <div className="space-y-4">
+              <div className="space-y-6">
                 <div>
                   <h2 className="text-xl font-bold text-slate-100">
                     Predictive Delay Intelligence & Corridor Bottleneck Analysis
                   </h2>
                   <p className="text-xs text-slate-400">
-                    Continuous ML monitoring of regional freight and courier routes with alternative bypass recommendations.
+                    Continuous ML monitoring of regional freight and courier routes, Doppler weather ETA adjustments, and alternative bypass recommendations.
                   </p>
                 </div>
+                {/* Weather-Adjusted Dynamic ETA Module */}
+                <WeatherAdjustedEtaModule />
+                {/* Custom Threshold Alerts & Priority Buffer Configuration Interface */}
+                <DelayThresholdConfigModal />
+                {/* Bottleneck Corridors & Bypass Radar */}
                 <PredictiveDelayWidget />
               </div>
             )}
@@ -209,10 +221,10 @@ export default function App() {
                 <div className="flex items-center justify-between">
                   <div>
                     <h2 className="text-xl font-bold text-slate-100">
-                      Geospatial Command & OpenRouteService (ORS) Routing
+                      Geospatial Command & Multi-Stop Routing Intelligence
                     </h2>
                     <p className="text-xs text-slate-400">
-                      Real-time interactive fleet telemetry, OpenRouteService road directions, isochrone reachability zones, and sorting depots.
+                      Google Maps Platform (Routes API v2) with Multi-Stop Waypoint Optimizer, OpenRouteService telemetry, and live fleet monitoring.
                     </p>
                   </div>
                 </div>
@@ -299,6 +311,12 @@ export default function App() {
             handleOpenDetail(found);
           }
         }}
+      />
+
+      {/* Offline Sync Outbox & Cellular Quality Console */}
+      <OfflineSyncModal
+        isOpen={isOfflineSyncOpen}
+        onClose={() => setIsOfflineSyncOpen(false)}
       />
     </div>
   );

@@ -84,9 +84,13 @@ export interface Vehicle {
     lat: number;
     lng: number;
     updatedAt: string;
-    speedKmh: number;
+    speedKmh?: number;
     heading: number;
   };
+  odometerKm?: number;
+  dailyMileageKm?: number;
+  fuelType?: 'DIESEL' | 'ELECTRIC' | 'UNLEADED';
+  avgConsumptionPer100Km?: number;
 }
 
 export interface Employee {
@@ -222,6 +226,7 @@ export interface Parcel {
   estimatedDeliveryDate: string;
   assignedCourierId?: string;
   assignedVehicleId?: string;
+  routeStopOrder?: number;
   currentGeo?: {
     lat: number;
     lng: number;
@@ -295,4 +300,191 @@ export interface AppNotification {
   trackingNumber?: string;
   severity: 'INFO' | 'WARNING' | 'CRITICAL';
   actionUrl?: string;
+}
+
+export interface PriorityBufferRule {
+  priority: ServiceTier;
+  label: string;
+  warningBufferMinutes: number; // Time buffer before warning alert triggers
+  criticalBufferMinutes: number; // Time buffer before critical breach alert triggers
+  minDelayRiskScore: number; // e.g. 50 score
+  autoDispatchBypass: boolean; // Auto propose bypass reroute
+  notifyRecipientSms: boolean; // Auto trigger customer notification
+  soundChime: boolean;
+}
+
+export interface DelayThresholdConfig {
+  id: string;
+  tenantId: string;
+  lastUpdated: string;
+  updatedBy: string;
+  enabledGlobalAlerts: boolean;
+  corridorSensitivity: 'STRICT' | 'STANDARD' | 'LENIENT';
+  rules: Record<ServiceTier, PriorityBufferRule>;
+  autoTriggerIncidentTicket: boolean;
+}
+
+export interface DelayThresholdBreachEvaluation {
+  parcel: Parcel;
+  priority: ServiceTier;
+  predictedDelayMinutes: number;
+  breachSeverity: 'CRITICAL_BREACH' | 'WARNING_BUFFER' | 'WITHIN_BUFFER';
+  bufferAllocatedMinutes: number;
+  bufferDeficitMinutes: number; // >0 means predicted delay exceeds buffer
+  recommendedAction: string;
+  alertDispatched: boolean;
+}
+
+export type GeofenceActionType = 'ENTER' | 'EXIT';
+
+export interface GeofenceZone {
+  id: string;
+  hubId: string;
+  hubName: string;
+  tenantId: string;
+  name: string;
+  radiusKm: number;
+  centerLat: number;
+  centerLng: number;
+  enabled: boolean;
+  notifyOnEnter: boolean;
+  notifyOnExit: boolean;
+  colorHex?: string;
+  lastTriggeredAt?: string;
+  activeVehiclesInsideCount?: number;
+}
+
+export interface GeofenceEvent {
+  id: string;
+  geofenceId: string;
+  geofenceName: string;
+  hubId: string;
+  hubName: string;
+  vehicleId: string;
+  vehicleNumber: string;
+  driverName?: string;
+  action: GeofenceActionType; // ENTER or EXIT
+  distanceFromCenterKm: number;
+  radiusKm: number;
+  timestamp: string;
+  speedKmh?: number;
+  lat: number;
+  lng: number;
+  acknowledged?: boolean;
+}
+
+export interface RouteFuelLogEntry {
+  id: string;
+  tenantId: string;
+  courierId: string;
+  courierName: string;
+  vehicleId: string;
+  vehicleNumber: string;
+  vehicleType: string;
+  fuelType: 'ELECTRIC' | 'DIESEL' | 'UNLEADED';
+  routeName: string;
+  routeCode: string;
+  date: string;
+  displayDate: string;
+  distanceKm: number;
+  fuelConsumed: number;
+  fuelUnit: 'L' | 'kWh';
+  efficiency: number; // L/100km or kWh/100km
+  targetEfficiency: number; // Baseline benchmark for vehicle
+  efficiencyDeltaPct: number; // Negative means more efficient than baseline
+  fuelCostUsd: number;
+  costPerKmUsd: number;
+  co2EmissionsKg: number;
+  stopsCount: number;
+  trafficConditions: 'LIGHT' | 'MODERATE' | 'CONGESTED';
+  ecoScore: number; // 0-100 rating
+  notes?: string;
+  createdAt: string;
+}
+
+// --- Vehicle Maintenance & Predictive Failure Types ---
+export type MaintenanceServiceType = 
+  | 'OIL_FILTER_CHANGE'
+  | 'BRAKE_SYSTEM_SERVICE'
+  | 'TIRE_ROTATION_REPLACEMENT'
+  | 'BATTERY_PACK_DIAGNOSTIC'
+  | 'TRANSMISSION_FLUID'
+  | 'SUSPENSION_STEERING'
+  | 'ANNUAL_SAFETY_INSPECTION'
+  | 'MOTOR_INVERTER_CALIBRATION';
+
+export interface MaintenanceLogEntry {
+  id: string;
+  tenantId: string;
+  vehicleId: string;
+  vehicleNumber: string;
+  serviceDate: string;
+  odometerAtServiceKm: number;
+  serviceType: MaintenanceServiceType;
+  technicianOrShop: string;
+  costUsd: number;
+  notes: string;
+  nextServiceOdometerKm: number;
+  nextServiceDate: string;
+  criticalStatus: 'GOOD' | 'UPCOMING' | 'OVERDUE';
+  performedItems: string[];
+}
+
+export interface PredictiveComponentHealth {
+  componentName: string;
+  wearPct: number; // 0-100%
+  riskLevel: 'NOMINAL' | 'ELEVATED' | 'CRITICAL';
+  failureMode: string;
+  urgencyWindow: string;
+  actionRecommendation: string;
+  historicalAnomalyDetected: boolean;
+}
+
+export interface PredictiveMechanicalFailure {
+  vehicleId: string;
+  vehicleNumber: string;
+  overallHealthScore: number; // 0 - 100
+  failureRiskLevel: 'LOW' | 'MODERATE' | 'HIGH' | 'CRITICAL';
+  projectedFailureKm: number;
+  telemetryFactors: {
+    brakeWearPct: number;
+    batteryDegradationOrEngineThermalStress: number;
+    transmissionStrainIndex: number;
+    tireTreadWearPct: number;
+    vibrationAnomaly: boolean;
+    oilOrCoolantLifePct: number;
+  };
+  predictedComponents: PredictiveComponentHealth[];
+  lastTelemetrySync: string;
+  recommendedAction: string;
+}
+
+// --- Mass-Dispatching Batch Assignment Types ---
+export type BatchDispatchStrategy = 
+  | 'BALANCED_WORKLOAD'
+  | 'GEO_CLUSTERING'
+  | 'SLA_PRIORITY'
+  | 'MAX_CAPACITY_PACKING';
+
+export interface VehicleBatchAssignment {
+  vehicle: Vehicle;
+  assignedCourier?: Employee;
+  parcels: Parcel[];
+  totalWeightKg: number;
+  capacityUtilizationPct: number;
+  estimatedStops: number;
+  estimatedRouteKm: number;
+  estimatedDurationMin: number;
+  primaryZone: string;
+}
+
+export interface BatchDispatchPlan {
+  id: string;
+  strategy: BatchDispatchStrategy;
+  totalParcelsCount: number;
+  totalWeightKg: number;
+  vehiclesCount: number;
+  assignments: VehicleBatchAssignment[];
+  unassignedParcels: Parcel[];
+  createdAt: string;
 }

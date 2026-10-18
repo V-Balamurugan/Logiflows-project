@@ -12,10 +12,18 @@ import {
   RefreshCw, 
   ShieldCheck,
   TrendingDown,
-  Truck
+  Truck,
+  Settings,
+  BellRing
 } from 'lucide-react';
 import { storage } from '../../services/storage';
 import { Parcel } from '../../types';
+import { DelayThresholdConfigModal } from './DelayThresholdConfigModal';
+import { 
+  broadcastPredictiveDelayIncident, 
+  PRESET_PREDICTIVE_INCIDENTS,
+  PredictiveDelayIncident 
+} from '../../services/predictiveDelayIncidentService';
 
 interface BottleneckCorridor {
   id: string;
@@ -102,6 +110,7 @@ export const PredictiveDelayWidget: React.FC<Props> = ({
   const [simulatedTrafficLoad, setSimulatedTrafficLoad] = useState<'NORMAL' | 'PEAK_SPIKE'>('NORMAL');
   const [appliedCorridors, setAppliedCorridors] = useState<Record<string, boolean>>({});
   const [isRecalculating, setIsRecalculating] = useState(false);
+  const [showThresholdConfig, setShowThresholdConfig] = useState(false);
 
   const parcels = storage.getParcels();
   const activeDelayedParcels = parcels.filter((p) => p.status === 'OUT_FOR_DELIVERY' || p.status === 'IN_TRANSIT_HUB_TRANSFER');
@@ -132,7 +141,45 @@ export const PredictiveDelayWidget: React.FC<Props> = ({
 
       setCorridors(updated);
       setIsRecalculating(false);
+
+      // Automated Detection: If severe weather or major traffic incident is detected, broadcast to LogisticsMap
+      const highIncidentCorridor = updated.find((c) => c.severity === 'HIGH') || updated[0];
+      if (weather === 'STORM' || traffic === 'PEAK_SPIKE' || (highIncidentCorridor && highIncidentCorridor.severity === 'HIGH')) {
+        const isWeatherStorm = weather === 'STORM';
+        const incident: PredictiveDelayIncident = {
+          id: `inc-auto-${Date.now()}`,
+          type: isWeatherStorm ? 'SEVERE_WEATHER_DELAY' : 'MAJOR_TRAFFIC_INCIDENT',
+          corridorId: highIncidentCorridor.id,
+          corridorName: highIncidentCorridor.name,
+          highway: highIncidentCorridor.highway,
+          severity: isWeatherStorm ? 'CRITICAL' : 'HIGH',
+          currentDelayMin: highIncidentCorridor.currentDelayMin,
+          cause: isWeatherStorm
+            ? `Severe Weather Storm Detected: Atmospheric downpour along ${highIncidentCorridor.highway} with standing water and 65km/h wind shear.`
+            : `Major Traffic Incident Detected: Heavy corridor bottleneck & gridlock along ${highIncidentCorridor.highway} (${highIncidentCorridor.cause}).`,
+          timestamp: new Date().toISOString(),
+          weatherCondition: isWeatherStorm ? 'GALE_STORM' : weather === 'RAIN' ? 'RAIN' : 'CLEAR',
+          trafficCondition: traffic === 'PEAK_SPIKE' ? 'GRIDLOCK' : 'PEAK_SPIKE',
+          recommendedBypass: {
+            ...highIncidentCorridor.recommendedBypass,
+            avoidHighway: highIncidentCorridor.highway,
+          },
+          triggerSource: 'PredictiveDelayWidget',
+          impactedVehicleId: 'veh-ev-101',
+          courierName: 'Marcus Vance',
+        };
+        broadcastPredictiveDelayIncident(incident);
+      }
     }, 450);
+  };
+
+  const handleBroadcastManualIncident = (type: 'TRAFFIC' | 'WEATHER') => {
+    const incident = type === 'WEATHER' ? PRESET_PREDICTIVE_INCIDENTS[1] : PRESET_PREDICTIVE_INCIDENTS[0];
+    broadcastPredictiveDelayIncident({
+      ...incident,
+      id: `manual-trigger-${Date.now()}`,
+      timestamp: new Date().toISOString(),
+    });
   };
 
   const handleApplyReroute = (corridor: BottleneckCorridor) => {
@@ -160,6 +207,26 @@ export const PredictiveDelayWidget: React.FC<Props> = ({
 
     setAppliedCorridors((prev) => ({ ...prev, [corridor.id]: true }));
 
+    // Also broadcast incident resolution & reroute trigger
+    broadcastPredictiveDelayIncident({
+      id: `reroute-exec-${Date.now()}`,
+      type: corridor.currentDelayMin > 25 ? 'MAJOR_TRAFFIC_INCIDENT' : 'MAJOR_TRAFFIC_INCIDENT',
+      corridorId: corridor.id,
+      corridorName: corridor.name,
+      highway: corridor.highway,
+      severity: corridor.severity === 'HIGH' ? 'CRITICAL' : 'HIGH',
+      currentDelayMin: corridor.currentDelayMin,
+      cause: `Reroute enforced for ${corridor.name} (${corridor.cause})`,
+      timestamp: new Date().toISOString(),
+      recommendedBypass: {
+        ...corridor.recommendedBypass,
+        avoidHighway: corridor.highway,
+      },
+      triggerSource: 'PredictiveDelayWidget',
+      impactedVehicleId: 'veh-ev-101',
+      courierName: 'Marcus Vance',
+    });
+
     if (onRerouteApplied) {
       onRerouteApplied(corridor.name, targetParcel.id);
     }
@@ -186,12 +253,33 @@ export const PredictiveDelayWidget: React.FC<Props> = ({
           </div>
         </div>
 
-        {/* Live recalculation indicator */}
-        <div className="flex items-center gap-2 text-xs font-mono text-slate-400">
-          <ShieldCheck className="w-4 h-4 text-emerald-400" />
-          <span>PostGIS Mesh Synced</span>
+        {/* Controls: Live mesh indicator + Threshold Alert Settings */}
+        <div className="flex items-center gap-3">
+          <div className="hidden sm:flex items-center gap-1.5 text-xs font-mono text-slate-400">
+            <ShieldCheck className="w-4 h-4 text-emerald-400" />
+            <span>PostGIS Mesh Synced</span>
+          </div>
+
+          <button
+            onClick={() => setShowThresholdConfig(!showThresholdConfig)}
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all border ${
+              showThresholdConfig
+                ? 'bg-indigo-600 text-white border-indigo-500 shadow-md shadow-indigo-600/30'
+                : 'bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700 hover:text-white'
+            }`}
+          >
+            <BellRing className="w-3.5 h-3.5 text-indigo-400" />
+            <span>{showThresholdConfig ? 'Hide Threshold Config' : 'Configure Delay Buffers'}</span>
+          </button>
         </div>
       </div>
+
+      {/* Conditionally rendered or expanded custom threshold alerts panel */}
+      {showThresholdConfig && (
+        <div className="animate-fade-in border-b border-slate-800 pb-5">
+          <DelayThresholdConfigModal />
+        </div>
+      )}
 
       {/* Simulation Scenario Controls */}
       <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs">
@@ -235,6 +323,26 @@ export const PredictiveDelayWidget: React.FC<Props> = ({
                 {t === 'NORMAL' ? 'Nominal' : 'Peak Jam'}
               </button>
             ))}
+          </div>
+
+          {/* Quick Instant Event Trigger Buttons */}
+          <div className="flex items-center gap-1.5 pl-2 border-l border-slate-800">
+            <button
+              onClick={() => handleBroadcastManualIncident('TRAFFIC')}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-950/80 hover:bg-rose-900 text-rose-300 border border-rose-500/40 text-[10px] font-bold transition-all"
+              title="Dispatches Major Traffic Collision on I-80 corridor to trigger automated re-routing in LogisticsMap"
+            >
+              <AlertTriangle className="w-3 h-3 text-rose-400" />
+              <span>Simulate I-80 Gridlock</span>
+            </button>
+            <button
+              onClick={() => handleBroadcastManualIncident('WEATHER')}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-950/80 hover:bg-indigo-900 text-indigo-300 border border-indigo-500/40 text-[10px] font-bold transition-all"
+              title="Dispatches Severe Atmospheric River Gale Storm delay to trigger automated re-routing in LogisticsMap"
+            >
+              <Zap className="w-3 h-3 text-cyan-400" />
+              <span>Simulate Severe Storm</span>
+            </button>
           </div>
         </div>
       </div>

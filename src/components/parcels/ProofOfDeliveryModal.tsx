@@ -1,8 +1,9 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { X, CheckCircle2, RotateCcw, PenTool, MapPin, ShieldCheck, User } from 'lucide-react';
+import { X, CheckCircle2, RotateCcw, PenTool, MapPin, ShieldCheck, User, WifiOff } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { Parcel } from '../../types';
 import { storage } from '../../services/storage';
+import { offlineSyncService } from '../../services/offlineSyncService';
 
 interface Props {
   parcel: Parcel | null;
@@ -154,6 +155,17 @@ export const ProofOfDeliveryModal: React.FC<Props> = ({ parcel, isOpen, onClose,
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
+          {/* Offline Mode Banner */}
+          {!offlineSyncService.isNetworkAvailable() && (
+            <div className="p-3 rounded-lg bg-amber-950/60 border border-amber-500/40 text-xs text-amber-200 flex items-center gap-2.5 shadow-sm">
+              <WifiOff className="w-4 h-4 text-amber-400 shrink-0" />
+              <div>
+                <span className="font-semibold block text-amber-300">Offline Cellular Dead Zone Active</span>
+                <span>Signature and GPS will be encrypted in local device storage and automatically uploaded when cell reception returns.</span>
+              </div>
+            </div>
+          )}
+
           {/* Destination Brief */}
           <div className="p-3 rounded-lg bg-slate-950/60 border border-slate-800 text-xs text-slate-300 flex items-start gap-2.5">
             <MapPin className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />

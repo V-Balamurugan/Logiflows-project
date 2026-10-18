@@ -15,15 +15,18 @@ import {
   FileCheck,
   Download
 } from 'lucide-react';
-import { Parcel, CustodyDocument } from '../../types';
+import { Parcel, CustodyDocument, Vehicle } from '../../types';
 import { CustodyTimeline } from './CustodyTimeline';
 import { CustodyDocumentScanner } from './CustodyDocumentScanner';
+import { CarbonEmissionEstimator } from './CarbonEmissionEstimator';
+import { storage } from '../../services/storage';
 
 interface Props {
   parcel: Parcel | null;
   isOpen: boolean;
   onClose: () => void;
   onPrintLabel: (parcel: Parcel) => void;
+  vehicles?: Vehicle[];
 }
 
 export const ParcelDetailModal: React.FC<Props> = ({
@@ -31,11 +34,16 @@ export const ParcelDetailModal: React.FC<Props> = ({
   isOpen,
   onClose,
   onPrintLabel,
+  vehicles: propVehicles,
 }) => {
   const [isDocScannerOpen, setIsDocScannerOpen] = useState(false);
   const [previewDoc, setPreviewDoc] = useState<CustodyDocument | null>(null);
 
   if (!isOpen || !parcel) return null;
+
+  const fleetVehicles = propVehicles && propVehicles.length > 0 
+    ? propVehicles 
+    : storage.getVehicles();
 
   const docs = parcel.custodyDocuments || [];
 
@@ -134,6 +142,12 @@ export const ParcelDetailModal: React.FC<Props> = ({
             </p>
           </div>
 
+          {/* Carbon Emission Estimator (Distance & Vehicle Propulsion Analysis) */}
+          <CarbonEmissionEstimator 
+            parcel={parcel} 
+            vehicles={fleetVehicles} 
+          />
+
           {/* Continuous Custody Documents & Customs Clearances Section */}
           <div className="p-4 sm:p-5 rounded-xl bg-slate-950/80 border border-slate-800 space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -210,6 +224,45 @@ export const ParcelDetailModal: React.FC<Props> = ({
               </div>
             )}
           </div>
+
+          {/* Delivered Proof of Delivery Card */}
+          {parcel.status === 'DELIVERED' && parcel.proofOfDelivery && (
+            <div className="p-4 rounded-xl bg-gradient-to-r from-emerald-950/40 via-slate-900 to-slate-950 border border-emerald-500/30 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                  <h4 className="text-sm font-bold text-slate-100">Proof of Delivery Captured (POD)</h4>
+                </div>
+                <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono text-[10px] font-bold border border-emerald-500/30">
+                  {parcel.proofOfDelivery.confirmationCode}
+                </span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                <div>
+                  <span className="text-slate-500 text-[10px] block">Signed by:</span>
+                  <span className="font-semibold text-slate-200">{parcel.proofOfDelivery.recipientName}</span>
+                </div>
+                <div>
+                  <span className="text-slate-500 text-[10px] block">Delivery Timestamp:</span>
+                  <span className="font-mono text-slate-300">
+                    {new Date(parcel.proofOfDelivery.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-500 text-[10px] block">GPS Delivery Coordinates:</span>
+                  <span className="font-mono text-slate-300">
+                    {parcel.proofOfDelivery.podGeoLat.toFixed(4)}, {parcel.proofOfDelivery.podGeoLng.toFixed(4)}
+                  </span>
+                </div>
+              </div>
+              {parcel.proofOfDelivery.signatureDataUrl && (
+                <div className="pt-2 border-t border-slate-800 flex items-center justify-between">
+                  <span className="text-[11px] text-slate-400">Digital Recipient Signature:</span>
+                  <img src={parcel.proofOfDelivery.signatureDataUrl} alt="Signature" className="h-8 max-w-[140px] invert opacity-80" />
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Custody Timeline */}
           <div className="p-4 sm:p-5 rounded-xl bg-slate-950/50 border border-slate-800/80">

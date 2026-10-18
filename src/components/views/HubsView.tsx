@@ -1,11 +1,26 @@
 import React, { useState } from 'react';
-import { Warehouse, Plus, MapPin, CheckCircle2, AlertTriangle, Phone, User } from 'lucide-react';
+import { 
+  Warehouse, 
+  Plus, 
+  MapPin, 
+  CheckCircle2, 
+  AlertTriangle, 
+  Phone, 
+  User,
+  TrendingUp,
+  BarChart3,
+  Users
+} from 'lucide-react';
 import { storage } from '../../services/storage';
 import { BranchHub, HubType, HubStatus } from '../../types';
+import { HubThroughputForecastModule } from '../analytics/HubThroughputForecastModule';
 
 export const HubsView: React.FC = () => {
   const currentTenantId = storage.getActiveTenantId();
   const hubs = storage.getHubs(currentTenantId);
+
+  const [activeTab, setActiveTab] = useState<'facilities_grid' | 'throughput_forecast'>('throughput_forecast');
+  const [selectedForecastHubId, setSelectedForecastHubId] = useState<string>(hubs[0]?.id || '');
 
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [name, setName] = useState('');
@@ -51,25 +66,68 @@ export const HubsView: React.FC = () => {
       <div className="flex flex-wrap items-center justify-between gap-4 p-5 rounded-xl bg-slate-900 border border-slate-800">
         <div>
           <span className="text-[10px] font-mono uppercase tracking-wider text-indigo-400 font-bold block mb-0.5">
-            GEOSPATIAL INFRASTRUCTURE · POSTGIS 16
+            GEOSPATIAL INFRASTRUCTURE · POSTGIS 16 & ML FORECASTING
           </span>
           <h2 className="text-xl font-bold text-slate-100">
             Logistics Sorting Hubs & Last-Mile Depots
           </h2>
           <p className="text-xs text-slate-400 mt-0.5">
-            Configured geographic centroids, sorting automation capacity, and live throughput loads.
+            Configured geographic centroids, sorting automation capacity, 24h volume forecasts, and proactive staff shift allocation.
           </p>
         </div>
-        <button
-          onClick={() => setIsAddOpen(true)}
-          className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg shadow-sm transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Add Hub Node</span>
-        </button>
+
+        {/* View Mode Switcher Tabs */}
+        <div className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-950 border border-slate-800 text-xs font-semibold">
+          <button
+            onClick={() => setActiveTab('throughput_forecast')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all ${
+              activeTab === 'throughput_forecast'
+                ? 'bg-gradient-to-r from-indigo-600 to-indigo-700 text-white font-bold shadow-md'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+            }`}
+          >
+            <TrendingUp className="w-3.5 h-3.5 text-indigo-200" />
+            <span>24h Throughput & Shifts</span>
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping inline-block" />
+          </button>
+
+          <button
+            onClick={() => setActiveTab('facilities_grid')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all ${
+              activeTab === 'facilities_grid'
+                ? 'bg-slate-800 text-white font-bold shadow-md'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+            }`}
+          >
+            <Warehouse className="w-3.5 h-3.5 text-slate-300" />
+            <span>Hub Facilities Grid ({hubs.length})</span>
+          </button>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      {/* Tab 1: Hub Throughput Forecast & Shift Planning */}
+      {activeTab === 'throughput_forecast' && (
+        <HubThroughputForecastModule
+          hubs={hubs}
+          selectedHubId={selectedForecastHubId}
+          onSelectHub={(id) => setSelectedForecastHubId(id)}
+        />
+      )}
+
+      {/* Tab 2: Hub Facilities Grid */}
+      {activeTab === 'facilities_grid' && (
+        <div className="space-y-4 animate-fade-in">
+          <div className="flex justify-end">
+            <button
+              onClick={() => setIsAddOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg shadow-sm transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Add Hub Node</span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {hubs.map((hub) => {
           const isCongested = hub.status === 'CONGESTED';
           const loadPct = Math.round((hub.currentLoad / hub.capacityDaily) * 100);
@@ -133,10 +191,24 @@ export const HubsView: React.FC = () => {
                   />
                 </div>
               </div>
+
+              {/* Action Button: View 24h Forecast & Shifts */}
+              <button
+                onClick={() => {
+                  setSelectedForecastHubId(hub.id);
+                  setActiveTab('throughput_forecast');
+                }}
+                className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs font-semibold bg-slate-800/80 hover:bg-indigo-600/30 text-indigo-300 hover:text-white border border-slate-700/80 hover:border-indigo-500/50 transition-all shadow-sm"
+              >
+                <TrendingUp className="w-3.5 h-3.5" />
+                <span>View 24h Forecast & Shifts</span>
+              </button>
             </div>
           );
         })}
       </div>
+    </div>
+  )}
 
       {/* Add Hub Modal */}
       {isAddOpen && (

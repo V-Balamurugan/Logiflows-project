@@ -25,6 +25,8 @@ interface Props {
   onApplyRouteToMap?: (coords: [number, number][], meta: OrsRouteResult) => void;
   onSelectHubIsochrone?: (hub: BranchHub, polygons: IsochronePolygon[]) => void;
   onClearOverlay?: () => void;
+  onOpenAutoOptimizer?: () => void;
+  onOpenMultiStopPlanner?: () => void;
   isOverlayActive?: boolean;
 }
 
@@ -35,6 +37,8 @@ export const OpenRouteServiceToolbox: React.FC<Props> = ({
   onApplyRouteToMap,
   onSelectHubIsochrone,
   onClearOverlay,
+  onOpenAutoOptimizer,
+  onOpenMultiStopPlanner,
   isOverlayActive = false,
 }) => {
   const [activeTab, setActiveTab] = useState<'routing' | 'isochrone' | 'config'>('routing');
@@ -172,6 +176,24 @@ export const OpenRouteServiceToolbox: React.FC<Props> = ({
           >
             API Setup
           </button>
+          {onOpenMultiStopPlanner && (
+            <button
+              onClick={onOpenMultiStopPlanner}
+              className="px-2.5 py-1 rounded font-bold text-indigo-300 hover:text-white bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/40 transition-colors flex items-center gap-1 shadow-sm"
+              title="Open Multi-Stop Route Planner & Waypoint Optimizer"
+            >
+              <span>🧭 Multi-Stop Planner</span>
+            </button>
+          )}
+          {onOpenAutoOptimizer && (
+            <button
+              onClick={onOpenAutoOptimizer}
+              className="px-2.5 py-1 rounded font-bold text-amber-300 hover:text-amber-200 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 transition-colors flex items-center gap-1 shadow-sm"
+              title="Auto-Optimize Courier Route using ORS Traffic Data"
+            >
+              <span>⚡ Auto-Optimize</span>
+            </button>
+          )}
         </div>
       </div>
 

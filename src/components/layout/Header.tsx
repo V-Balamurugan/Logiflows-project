@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { User, UserRole } from '../../types';
 import { storage } from '../../services/storage';
+import { OfflineSyncBadge } from '../sync/OfflineSyncBadge';
 
 interface Props {
   currentUser: User;
@@ -19,6 +20,7 @@ interface Props {
   onOpenTopology: () => void;
   onNavigatePublicTracking: () => void;
   onOpenNotifications: () => void;
+  onOpenOfflineSync: () => void;
   isOpenMobile?: boolean;
   onToggleMobileMenu?: () => void;
   activeView: string;
@@ -31,6 +33,7 @@ export const Header: React.FC<Props> = ({
   onOpenTopology,
   onNavigatePublicTracking,
   onOpenNotifications,
+  onOpenOfflineSync,
   isOpenMobile,
   onToggleMobileMenu,
   activeView,
@@ -173,6 +176,9 @@ export const Header: React.FC<Props> = ({
             </select>
           </div>
         </div>
+
+        {/* Offline Sync Outbox & Cellular Status Badge */}
+        <OfflineSyncBadge onClick={onOpenOfflineSync} />
 
         {/* Real-time Notifications Drawer Trigger */}
         <button

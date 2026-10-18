@@ -11,16 +11,20 @@ import {
   QrCode, 
   CheckCircle2, 
   Clock,
-  Printer
+  Printer,
+  Send
 } from 'lucide-react';
 import { storage } from '../../services/storage';
 import { Parcel, ParcelStatus } from '../../types';
+import { LiveFleetMapOverlay } from '../map/LiveFleetMapOverlay';
+import { LiveFleetMapFloatingButton } from '../map/LiveFleetMapFloatingButton';
 
 interface Props {
   onSelectParcel: (parcel: Parcel) => void;
   onOpenBooking: () => void;
   onOpenScanner: () => void;
   onPrintLabel: (parcel: Parcel) => void;
+  onNavigateFleet?: () => void;
 }
 
 export const TenantAdminDashboard: React.FC<Props> = ({
@@ -28,6 +32,7 @@ export const TenantAdminDashboard: React.FC<Props> = ({
   onOpenBooking,
   onOpenScanner,
   onPrintLabel,
+  onNavigateFleet,
 }) => {
   const currentTenantId = storage.getActiveTenantId();
   const parcels = storage.getParcels(currentTenantId);
@@ -39,6 +44,12 @@ export const TenantAdminDashboard: React.FC<Props> = ({
   const [assigningParcel, setAssigningParcel] = useState<Parcel | null>(null);
   const [selectedCourierId, setSelectedCourierId] = useState<string>('');
   const [selectedVehicleId, setSelectedVehicleId] = useState<string>('');
+  const [isLiveFleetMapOpen, setIsLiveFleetMapOpen] = useState(false);
+
+  const readyForDispatchCount = parcels.filter(p => 
+    (p.status === 'BOOKED' || p.status === 'ACCEPTED' || p.status === 'AT_ORIGIN_HUB' || p.status === 'AT_DESTINATION_HUB') &&
+    (!p.assignedVehicleId || !p.assignedCourierId)
+  ).length;
 
   const filteredParcels = parcels.filter((p) => {
     const matchesStatus = statusFilter === 'ALL' || p.status === statusFilter;
@@ -80,6 +91,16 @@ export const TenantAdminDashboard: React.FC<Props> = ({
           </p>
         </div>
         <div className="flex items-center gap-3">
+          {onNavigateFleet && readyForDispatchCount > 0 && (
+            <button
+              onClick={onNavigateFleet}
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-purple-300 bg-purple-500/15 hover:bg-purple-500/25 border border-purple-500/40 rounded-lg shadow-sm transition-colors"
+              title="Open Batch Mass-Dispatch Engine in Fleet View"
+            >
+              <Send className="w-4 h-4 text-purple-400" />
+              <span>Mass Dispatch ({readyForDispatchCount} Ready)</span>
+            </button>
+          )}
           <button
             onClick={onOpenScanner}
             className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-200 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg transition-colors"
@@ -313,6 +334,19 @@ export const TenantAdminDashboard: React.FC<Props> = ({
           </div>
         </div>
       )}
+
+      {/* Floating 'Live Fleet Map' Button */}
+      <LiveFleetMapFloatingButton
+        onClick={() => setIsLiveFleetMapOpen(true)}
+        isOpen={isLiveFleetMapOpen}
+        badgeText="FLEET RADAR"
+      />
+
+      {/* Small Overlay: Active Courier location relative to next delivery destination */}
+      <LiveFleetMapOverlay
+        isOpen={isLiveFleetMapOpen}
+        onClose={() => setIsLiveFleetMapOpen(false)}
+      />
     </div>
   );
 };

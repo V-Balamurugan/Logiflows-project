@@ -8,12 +8,19 @@ import {
   CustodyEvent, 
   CustodyEventType, 
   ParcelStatus, 
+  VehicleStatus,
   ProofOfDelivery, 
   MicroserviceNode, 
   MapDiagnosticState,
   DelayRiskAssessment,
   AppNotification,
-  CustodyDocument
+  CustodyDocument,
+  DelayThresholdConfig,
+  PriorityBufferRule,
+  ServiceTier,
+  GeofenceZone,
+  GeofenceEvent,
+  RouteFuelLogEntry
 } from '../types';
 import { 
   INITIAL_USERS, 
@@ -22,8 +29,10 @@ import {
   INITIAL_VEHICLES, 
   INITIAL_EMPLOYEES, 
   INITIAL_PARCELS, 
-  INITIAL_MICROSERVICES 
+  INITIAL_MICROSERVICES,
+  INITIAL_ROUTE_FUEL_LOGS
 } from '../data/mockData';
+import { offlineSyncService } from './offlineSyncService';
 
 const STORAGE_KEYS = {
   CURRENT_USER: 'logiflows_current_user',
@@ -36,6 +45,11 @@ const STORAGE_KEYS = {
   TENANTS: 'logiflows_tenants',
   SERVICES: 'logiflows_microservices',
   NOTIFICATIONS: 'logiflows_notifications',
+  DELAY_THRESHOLDS: 'logiflows_delay_threshold_config',
+  GEOFENCE_ZONES: 'logiflows_geofence_zones',
+  GEOFENCE_EVENTS: 'logiflows_geofence_events',
+  VEHICLE_GEOFENCE_STATE: 'logiflows_vehicle_geofence_state',
+  ROUTE_FUEL_LOGS: 'logiflows_route_fuel_logs',
 };
 
 // Generate cryptographic-looking hash for custody audits
@@ -54,6 +68,11 @@ export class LogisticsStorageService {
 
   private constructor() {
     this.initDefaults();
+    if (typeof window !== 'undefined') {
+      window.addEventListener('logiflows:sync-completed', () => {
+        this.notify();
+      });
+    }
   }
 
   public static getInstance(): LogisticsStorageService {
@@ -124,6 +143,9 @@ export class LogisticsStorageService {
       localStorage.setItem(STORAGE_KEYS.AUTH_TOKEN, 'eyJhbGciOiJFZDI1NTE5IiwidHlwIjoiSldUIn0.logiflows_valid_session_token');
       localStorage.setItem(STORAGE_KEYS.CURRENT_TENANT, 'tenant-apex');
     }
+    if (!localStorage.getItem(STORAGE_KEYS.ROUTE_FUEL_LOGS)) {
+      localStorage.setItem(STORAGE_KEYS.ROUTE_FUEL_LOGS, JSON.stringify(INITIAL_ROUTE_FUEL_LOGS));
+    }
   }
 
   public subscribe(listener: () => void): () => void {
@@ -131,7 +153,7 @@ export class LogisticsStorageService {
     return () => this.listeners.delete(listener);
   }
 
-  private notify(): void {
+  public notify(): void {
     this.listeners.forEach((fn) => fn());
   }
 
@@ -260,6 +282,25 @@ export class LogisticsStorageService {
     }
   }
 
+  public updateVehicleStatus(vehicleId: string, status: VehicleStatus): boolean {
+    const raw = localStorage.getItem(STORAGE_KEYS.VEHICLES);
+    const vehicles: Vehicle[] = raw ? JSON.parse(raw) : INITIAL_VEHICLES;
+    const index = vehicles.findIndex((v) => v.id === vehicleId);
+    if (index >= 0) {
+      vehicles[index].status = status;
+      localStorage.setItem(STORAGE_KEYS.VEHICLES, JSON.stringify(vehicles));
+      this.addNotification({
+        title: `Vehicle ${vehicles[index].vehicleNumber} Status: ${status}`,
+        message: `Vehicle ${vehicles[index].vehicleNumber} status updated to ${status}. Telemetry monitor updated.`,
+        category: 'STATUS_CHANGE',
+        severity: status === 'MAINTENANCE' ? 'CRITICAL' : 'INFO',
+      });
+      this.notify();
+      return true;
+    }
+    return false;
+  }
+
   // --- Employees ---
   public getEmployees(tenantId?: string): Employee[] {
     const raw = localStorage.getItem(STORAGE_KEYS.EMPLOYEES);
@@ -338,6 +379,18 @@ export class LogisticsStorageService {
     parcels.unshift(newParcel);
     localStorage.setItem(STORAGE_KEYS.PARCELS, JSON.stringify(parcels));
 
+    // Register in offline synchronization outbox
+    offlineSyncService.enqueueOperation({
+      clientActionId: `book-${newParcel.id}`,
+      type: 'BOOK_PARCEL',
+      entityId: newParcel.id,
+      trackingNumber: newParcel.trackingNumber,
+      summary: `Booked commercial shipment for ${newParcel.recipient.name} (${newParcel.recipient.city})`,
+      payload: newParcel,
+      courierId: currentUser.id,
+      courierName: currentUser.name,
+    });
+
     this.addNotification({
       title: 'New Commercial Booking Created',
       message: `Parcel ${trackingNumber} registered for ${newParcelData.recipient.name} (${newParcelData.recipient.city}). Tracking active.`,
@@ -394,9 +447,31 @@ export class LogisticsStorageService {
 
     localStorage.setItem(STORAGE_KEYS.PARCELS, JSON.stringify(parcels));
 
+    // Register in offline synchronization outbox
+    const isOnline = offlineSyncService.isNetworkAvailable();
+    offlineSyncService.enqueueOperation({
+      clientActionId: `status-${parcelId}-${Date.now()}`,
+      type: 'UPDATE_PARCEL_STATUS',
+      entityId: parcelId,
+      trackingNumber: parcels[index].trackingNumber,
+      summary: `Status: ${newStatus.replace(/_/g, ' ')} (${locationName})`,
+      payload: {
+        newStatus,
+        eventType,
+        locationName,
+        notes,
+        geoLat,
+        geoLng,
+        event: newEvent,
+      },
+      courierId: user.id,
+      courierName: user.name,
+    });
+
+    const offlineNote = !isOnline ? ' [Saved in offline outbox — will sync on reconnect]' : '';
     this.addNotification({
       title: `Parcel Status: ${newStatus.replace(/_/g, ' ')}`,
-      message: `${parcels[index].trackingNumber} updated to ${newStatus.replace(/_/g, ' ')} at ${locationName}.`,
+      message: `${parcels[index].trackingNumber} updated to ${newStatus.replace(/_/g, ' ')} at ${locationName}.${offlineNote}`,
       category: 'STATUS_CHANGE',
       parcelId: parcels[index].id,
       trackingNumber: parcels[index].trackingNumber,
@@ -437,8 +512,69 @@ export class LogisticsStorageService {
 
     parcels[index].custodyEvents.push(event);
     localStorage.setItem(STORAGE_KEYS.PARCELS, JSON.stringify(parcels));
+
+    // Register in offline sync outbox
+    offlineSyncService.enqueueOperation({
+      clientActionId: `assign-${parcelId}-${Date.now()}`,
+      type: 'ASSIGN_PARCEL',
+      entityId: parcelId,
+      trackingNumber: parcels[index].trackingNumber,
+      summary: `Assigned to courier ${courier ? courier.name : courierId}`,
+      payload: { courierId, vehicleId },
+      courierId: user.id,
+      courierName: user.name,
+    });
+
     this.notify();
     return true;
+  }
+
+  public reorderCourierStops(
+    courierId: string,
+    orderedParcelIds: string[],
+    meta?: { timeSavedMinutes?: number; trafficNotes?: string }
+  ): Parcel[] {
+    const raw = localStorage.getItem(STORAGE_KEYS.PARCELS);
+    const parcels: Parcel[] = raw ? JSON.parse(raw) : INITIAL_PARCELS;
+    const now = Date.now();
+
+    const employee = this.getEmployees().find((e) => e.id === courierId);
+    const courierName = employee ? employee.name : 'Courier';
+
+    orderedParcelIds.forEach((pid, idx) => {
+      const pIndex = parcels.findIndex((p) => p.id === pid);
+      if (pIndex >= 0) {
+        parcels[pIndex].routeStopOrder = idx + 1;
+        // Sequentially adjust ETA by ~25 minutes per stop
+        parcels[pIndex].estimatedDeliveryDate = new Date(
+          now + (idx + 1) * 25 * 60 * 1000
+        ).toISOString();
+      }
+    });
+
+    localStorage.setItem(STORAGE_KEYS.PARCELS, JSON.stringify(parcels));
+
+    // Register in offline synchronization outbox
+    offlineSyncService.enqueueOperation({
+      clientActionId: `reorder-${courierId}-${now}`,
+      type: 'REORDER_STOPS',
+      entityId: courierId,
+      summary: `Reordered itinerary for ${courierName} (${orderedParcelIds.length} stops)`,
+      payload: { orderedParcelIds, meta },
+      courierId,
+      courierName,
+    });
+
+    const timeSaved = meta?.timeSavedMinutes ? ` Saved approx. ${meta.timeSavedMinutes} minutes.` : '';
+    this.addNotification({
+      title: 'Itinerary Optimized via OpenRouteService',
+      message: `Assigned delivery stops for ${courierName} were reordered using live traffic data.${timeSaved}`,
+      category: 'COURIER_TASK',
+      severity: 'INFO',
+    });
+
+    this.notify();
+    return parcels;
   }
 
   public submitProofOfDelivery(parcelId: string, pod: Omit<ProofOfDelivery, 'timestamp' | 'verifiedByCourierId'>): boolean {
@@ -475,9 +611,23 @@ export class LogisticsStorageService {
     parcels[index].custodyEvents.push(event);
     localStorage.setItem(STORAGE_KEYS.PARCELS, JSON.stringify(parcels));
 
+    // Register in offline synchronization outbox
+    const isOnline = offlineSyncService.isNetworkAvailable();
+    offlineSyncService.enqueueOperation({
+      clientActionId: `pod-${parcelId}-${Date.now()}`,
+      type: 'SUBMIT_POD',
+      entityId: parcelId,
+      trackingNumber: parcels[index].trackingNumber,
+      summary: `Proof of Delivery: ${pod.recipientName} (Sig & GPS recorded)`,
+      payload: { completePod, event },
+      courierId: user.id,
+      courierName: user.name,
+    });
+
+    const offlineNote = !isOnline ? ' [Saved in device outbox. Will sync automatically once cellular signal returns]' : '';
     this.addNotification({
       title: 'Proof of Delivery Completed',
-      message: `Parcel ${parcels[index].trackingNumber} delivered directly to ${pod.recipientName}. Digital signature & GPS logged.`,
+      message: `Parcel ${parcels[index].trackingNumber} delivered directly to ${pod.recipientName}. Digital signature & GPS logged.${offlineNote}`,
       category: 'STATUS_CHANGE',
       parcelId: parcels[index].id,
       trackingNumber: parcels[index].trackingNumber,
@@ -640,6 +790,255 @@ export class LogisticsStorageService {
 
     this.notify();
     return newDoc;
+  }
+
+  // --- Predictive Delay Alert Thresholds & Priority Buffer Configuration ---
+  public getDefaultThresholdConfig(tenantId?: string): DelayThresholdConfig {
+    const tid = tenantId || this.getActiveTenantId();
+    return {
+      id: `thresh-cfg-${tid}`,
+      tenantId: tid,
+      lastUpdated: new Date().toISOString(),
+      updatedBy: 'Operations Dispatcher',
+      enabledGlobalAlerts: true,
+      corridorSensitivity: 'STANDARD',
+      autoTriggerIncidentTicket: true,
+      rules: {
+        SAME_DAY_PRIORITY: {
+          priority: 'SAME_DAY_PRIORITY',
+          label: 'Same-Day Urgent SLA',
+          warningBufferMinutes: 10, // Alert when delay exceeds 10m
+          criticalBufferMinutes: 20, // Critical breach if delay exceeds 20m
+          minDelayRiskScore: 35,
+          autoDispatchBypass: true,
+          notifyRecipientSms: true,
+          soundChime: true,
+        },
+        NEXT_DAY_EXPRESS: {
+          priority: 'NEXT_DAY_EXPRESS',
+          label: 'Next-Day Express Priority',
+          warningBufferMinutes: 25,
+          criticalBufferMinutes: 45,
+          minDelayRiskScore: 45,
+          autoDispatchBypass: true,
+          notifyRecipientSms: true,
+          soundChime: false,
+        },
+        STANDARD_GROUND: {
+          priority: 'STANDARD_GROUND',
+          label: 'Standard Ground Economy',
+          warningBufferMinutes: 45,
+          criticalBufferMinutes: 90,
+          minDelayRiskScore: 60,
+          autoDispatchBypass: false,
+          notifyRecipientSms: false,
+          soundChime: false,
+        },
+      },
+    };
+  }
+
+  public getDelayThresholdConfig(tenantId?: string): DelayThresholdConfig {
+    const tid = tenantId || this.getActiveTenantId();
+    const raw = localStorage.getItem(`${STORAGE_KEYS.DELAY_THRESHOLDS}_${tid}`);
+    if (raw) {
+      try {
+        return JSON.parse(raw);
+      } catch (e) {
+        console.error('Failed to parse threshold config:', e);
+      }
+    }
+    const defaults = this.getDefaultThresholdConfig(tid);
+    this.saveDelayThresholdConfig(defaults);
+    return defaults;
+  }
+
+  public saveDelayThresholdConfig(config: DelayThresholdConfig): void {
+    const tid = config.tenantId || this.getActiveTenantId();
+    const updated: DelayThresholdConfig = {
+      ...config,
+      tenantId: tid,
+      lastUpdated: new Date().toISOString(),
+    };
+    localStorage.setItem(`${STORAGE_KEYS.DELAY_THRESHOLDS}_${tid}`, JSON.stringify(updated));
+    this.notify();
+  }
+
+  public resetDelayThresholdConfig(tenantId?: string): DelayThresholdConfig {
+    const tid = tenantId || this.getActiveTenantId();
+    const defaults = this.getDefaultThresholdConfig(tid);
+    this.saveDelayThresholdConfig(defaults);
+    return defaults;
+  }
+
+  // --- Geofence Zones & Proximity Alert System ---
+  public getDefaultGeofenceZones(tenantId?: string): GeofenceZone[] {
+    const hubs = this.getHubs(tenantId);
+    return hubs.map((hub, idx) => ({
+      id: `geo-zone-${hub.id}`,
+      hubId: hub.id,
+      hubName: hub.name,
+      tenantId: hub.tenantId,
+      name: `${hub.name} Perimeter`,
+      radiusKm: idx === 0 ? 5.0 : idx === 1 ? 3.5 : 4.0, // default radius
+      centerLat: hub.lat,
+      centerLng: hub.lng,
+      enabled: true,
+      notifyOnEnter: true,
+      notifyOnExit: true,
+      colorHex: idx === 0 ? '#10b981' : idx === 1 ? '#6366f1' : '#f59e0b',
+      lastTriggeredAt: undefined,
+    }));
+  }
+
+  public getGeofenceZones(tenantId?: string): GeofenceZone[] {
+    const tid = tenantId || this.getActiveTenantId();
+    const raw = localStorage.getItem(`${STORAGE_KEYS.GEOFENCE_ZONES}_${tid}`);
+    if (raw) {
+      try {
+        return JSON.parse(raw);
+      } catch (e) {
+        console.error('Failed to parse geofence zones:', e);
+      }
+    }
+    const defaults = this.getDefaultGeofenceZones(tid);
+    this.saveGeofenceZones(defaults, tid);
+    return defaults;
+  }
+
+  public saveGeofenceZones(zones: GeofenceZone[], tenantId?: string): void {
+    const tid = tenantId || this.getActiveTenantId();
+    localStorage.setItem(`${STORAGE_KEYS.GEOFENCE_ZONES}_${tid}`, JSON.stringify(zones));
+    this.notify();
+  }
+
+  public updateGeofenceZone(updatedZone: GeofenceZone): void {
+    const zones = this.getGeofenceZones(updatedZone.tenantId);
+    const index = zones.findIndex((z) => z.id === updatedZone.id);
+    if (index >= 0) {
+      zones[index] = updatedZone;
+    } else {
+      zones.push(updatedZone);
+    }
+    this.saveGeofenceZones(zones, updatedZone.tenantId);
+  }
+
+  public addGeofenceZone(newZone: Omit<GeofenceZone, 'id'>): GeofenceZone {
+    const zones = this.getGeofenceZones(newZone.tenantId);
+    const created: GeofenceZone = {
+      ...newZone,
+      id: `geo-zone-${Date.now().toString(36)}`,
+    };
+    zones.push(created);
+    this.saveGeofenceZones(zones, newZone.tenantId);
+    return created;
+  }
+
+  public deleteGeofenceZone(zoneId: string, tenantId?: string): void {
+    const tid = tenantId || this.getActiveTenantId();
+    const zones = this.getGeofenceZones(tid).filter((z) => z.id !== zoneId);
+    this.saveGeofenceZones(zones, tid);
+  }
+
+  public getGeofenceEvents(tenantId?: string): GeofenceEvent[] {
+    const tid = tenantId || this.getActiveTenantId();
+    const raw = localStorage.getItem(`${STORAGE_KEYS.GEOFENCE_EVENTS}_${tid}`);
+    return raw ? JSON.parse(raw) : [];
+  }
+
+  public recordGeofenceEvent(eventData: Omit<GeofenceEvent, 'id' | 'timestamp'>): GeofenceEvent {
+    const tid = this.getActiveTenantId();
+    const events = this.getGeofenceEvents(tid);
+    const newEvent: GeofenceEvent = {
+      ...eventData,
+      id: `geo-evt-${Date.now().toString(36)}-${Math.floor(Math.random() * 1000)}`,
+      timestamp: new Date().toISOString(),
+    };
+    events.unshift(newEvent);
+    // Keep last 100 geofence events
+    if (events.length > 100) events.pop();
+    localStorage.setItem(`${STORAGE_KEYS.GEOFENCE_EVENTS}_${tid}`, JSON.stringify(events));
+
+    // Update zone's last triggered timestamp
+    const zones = this.getGeofenceZones(tid);
+    const zIdx = zones.findIndex((z) => z.id === eventData.geofenceId);
+    if (zIdx >= 0) {
+      zones[zIdx].lastTriggeredAt = newEvent.timestamp;
+      this.saveGeofenceZones(zones, tid);
+    }
+
+    // Trigger platform Notification
+    const actionLabel = eventData.action === 'ENTER' ? 'ENTERED' : 'EXITED';
+    this.addNotification({
+      title: `Geofence Alert: Vehicle ${eventData.vehicleNumber} ${actionLabel}`,
+      message: `Vehicle ${eventData.vehicleNumber} (${eventData.driverName || 'Courier'}) has ${actionLabel.toLowerCase()} the ${eventData.radiusKm}km radius zone around ${eventData.hubName} (${eventData.distanceFromCenterKm} km from hub).`,
+      category: 'COURIER_TASK',
+      severity: eventData.action === 'ENTER' ? 'INFO' : 'WARNING',
+    });
+
+    this.notify();
+    return newEvent;
+  }
+
+  // --- Route Fuel Efficiency Logging ---
+  public getRouteFuelLogs(tenantId?: string, courierId?: string): RouteFuelLogEntry[] {
+    const tid = tenantId || this.getActiveTenantId();
+    const raw = localStorage.getItem(STORAGE_KEYS.ROUTE_FUEL_LOGS);
+    let logs: RouteFuelLogEntry[] = raw ? JSON.parse(raw) : INITIAL_ROUTE_FUEL_LOGS;
+    if (tid) {
+      logs = logs.filter((l) => l.tenantId === tid);
+    }
+    if (courierId) {
+      logs = logs.filter((l) => l.courierId === courierId);
+    }
+    return logs;
+  }
+
+  public addRouteFuelLog(entry: Omit<RouteFuelLogEntry, 'id' | 'createdAt'>): RouteFuelLogEntry {
+    const raw = localStorage.getItem(STORAGE_KEYS.ROUTE_FUEL_LOGS);
+    const logs: RouteFuelLogEntry[] = raw ? JSON.parse(raw) : [...INITIAL_ROUTE_FUEL_LOGS];
+    const newEntry: RouteFuelLogEntry = {
+      ...entry,
+      id: `fuel-log-${Date.now().toString(36)}-${Math.floor(Math.random() * 1000)}`,
+      createdAt: new Date().toISOString(),
+    };
+    logs.unshift(newEntry);
+    localStorage.setItem(STORAGE_KEYS.ROUTE_FUEL_LOGS, JSON.stringify(logs));
+
+    // Register offline sync operation
+    offlineSyncService.enqueueOperation({
+      clientActionId: `fuel-${newEntry.id}`,
+      type: 'UPDATE_PARCEL_STATUS' as any,
+      entityId: newEntry.id,
+      summary: `Logged Route Fuel: ${newEntry.routeName} (${newEntry.fuelConsumed} ${newEntry.fuelUnit} over ${newEntry.distanceKm}km)`,
+      payload: newEntry,
+    });
+
+    // App Notification
+    const deltaSign = newEntry.efficiencyDeltaPct <= 0 ? 'better' : 'higher';
+    const deltaStr = Math.abs(newEntry.efficiencyDeltaPct).toFixed(1);
+    this.addNotification({
+      title: 'Route Fuel Consumption Logged',
+      message: `${newEntry.routeName}: ${newEntry.fuelConsumed} ${newEntry.fuelUnit} (${newEntry.efficiency} ${newEntry.fuelUnit}/100km, ${deltaStr}% ${deltaSign} than benchmark). Eco-Score: ${newEntry.ecoScore}/100.`,
+      category: 'COURIER_TASK',
+      severity: 'INFO',
+    });
+
+    this.notify();
+    return newEntry;
+  }
+
+  public deleteRouteFuelLog(id: string): boolean {
+    const raw = localStorage.getItem(STORAGE_KEYS.ROUTE_FUEL_LOGS);
+    if (!raw) return false;
+    const logs: RouteFuelLogEntry[] = JSON.parse(raw);
+    const filtered = logs.filter((l) => l.id !== id);
+    if (filtered.length !== logs.length) {
+      localStorage.setItem(STORAGE_KEYS.ROUTE_FUEL_LOGS, JSON.stringify(filtered));
+      this.notify();
+      return true;
+    }
+    return false;
   }
 }
 

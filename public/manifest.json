@@ -1,0 +1,19 @@
+{
+  "id": "/",
+  "name": "LogiFlows — Intelligent Logistics Platform",
+  "short_name": "LogiFlows",
+  "description": "Multi-tenant B2B courier and parcel delivery coordination platform with continuous custody, geospatial routing, and offline synchronization.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#020617",
+  "theme_color": "#4f46e5",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
