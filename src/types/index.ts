@@ -89,6 +89,8 @@ export interface Vehicle {
   };
   odometerKm?: number;
   dailyMileageKm?: number;
+  engineHours?: number;
+  dailyEngineHours?: number;
   fuelType?: 'DIESEL' | 'ELECTRIC' | 'UNLEADED';
   avgConsumptionPer100Km?: number;
 }
@@ -426,6 +428,8 @@ export interface MaintenanceLogEntry {
   notes: string;
   nextServiceOdometerKm: number;
   nextServiceDate: string;
+  engineHoursAtService?: number;
+  nextServiceEngineHours?: number;
   criticalStatus: 'GOOD' | 'UPCOMING' | 'OVERDUE';
   performedItems: string[];
 }
@@ -446,6 +450,11 @@ export interface PredictiveMechanicalFailure {
   overallHealthScore: number; // 0 - 100
   failureRiskLevel: 'LOW' | 'MODERATE' | 'HIGH' | 'CRITICAL';
   projectedFailureKm: number;
+  engineHours?: number;
+  engineHoursRemaining?: number;
+  isServiceDue?: boolean;
+  serviceDuePriority?: 'HIGH' | 'CRITICAL' | 'NORMAL';
+  serviceDueReason?: string;
   telemetryFactors: {
     brakeWearPct: number;
     batteryDegradationOrEngineThermalStress: number;
@@ -488,3 +497,419 @@ export interface BatchDispatchPlan {
   unassignedParcels: Parcel[];
   createdAt: string;
 }
+
+// --- Capacity Balancing & Predictive Hub Rerouting Types ---
+export interface HubHourlyForecast {
+  hourLabel: string;
+  projectedPackages: number;
+  utilizationPct: number;
+  estimatedGateDwellMin: number;
+  risk: 'OPTIMAL' | 'MODERATE' | 'CONGESTED' | 'CRITICAL';
+}
+
+export interface HubCongestionForecast {
+  hubId: string;
+  hubCode: string;
+  hubName: string;
+  hubType: HubType;
+  capacityDaily: number;
+  currentLoad: number;
+  currentUtilizationPct: number;
+  status: HubStatus;
+  activeDocks: number;
+  totalDocks: number;
+  avgGateWaitMin: number;
+  projectedPeakHour: string;
+  projectedPeakUtilizationPct: number;
+  hourlyForecast: HubHourlyForecast[];
+  inboundEnRouteVehiclesCount: number;
+  surplusCapacityPackages: number;
+}
+
+export interface VehicleRerouteSuggestion {
+  id: string;
+  vehicleId: string;
+  vehicleNumber: string;
+  driverName: string;
+  vehicleType: VehicleType;
+  currentLoadKg: number;
+  capacityKg: number;
+  currentDestinationHubId: string;
+  currentDestinationHubName: string;
+  currentDestinationHubCode: string;
+  currentCongestionLevel: number;
+  currentEstimatedWaitMin: number;
+  suggestedHubId: string;
+  suggestedHubName: string;
+  suggestedHubCode: string;
+  suggestedCongestionLevel: number;
+  suggestedEstimatedWaitMin: number;
+  idleTimeSavedMin: number;
+  distanceDeltaKm: number;
+  travelTimeDeltaMin: number;
+  netTimeSavedMin: number;
+  idleFuelSavedLiters: number;
+  co2SavedKg: number;
+  parcelsOnboardCount: number;
+  rationale: string;
+  status: 'PROPOSED' | 'APPLIED' | 'DISMISSED';
+  appliedAt?: string;
+}
+
+export interface CapacityBalancingMetrics {
+  totalHubsMonitored: number;
+  congestedHubsCount: number;
+  totalIdleMinutesSaved: number;
+  totalReroutesSuggested: number;
+  totalReroutesApplied: number;
+  fuelSavedLiters: number;
+  co2AvoidedKg: number;
+  averageFleetDwellReductionPct: number;
+}
+
+// --- Route Optimization AI Types ---
+export interface OptimizedRouteStop {
+  sequenceNumber: number;
+  parcelId: string;
+  trackingNumber: string;
+  recipientName: string;
+  street: string;
+  city: string;
+  lat: number;
+  lng: number;
+  weightKg: number;
+  remainingPayloadKg: number;
+  serviceTier: string;
+  etaMinutes: number;
+  estimatedArrivalClock: string;
+  trafficCondition: 'FREE_FLOW' | 'MODERATE' | 'CONGESTED';
+  trafficDelayMin: number;
+  legDistanceKm: number;
+  legFuelConsumed: number;
+}
+
+export interface OptimizedVehicleRouteSequence {
+  vehicleId: string;
+  vehicleNumber: string;
+  vehicleType: VehicleType;
+  driverName: string;
+  initialFuelPct: number;
+  initialPayloadKg: number;
+  capacityKg: number;
+  fuelType: 'DIESEL' | 'ELECTRIC' | 'UNLEADED';
+  totalStops: number;
+  totalDistanceKm: number;
+  totalDurationMin: number;
+  fuelConsumedAmount: number; // liters or kWh
+  fuelSavedAmount: number;
+  fuelEfficiencyScore: number; // 0-100 rating
+  co2EmittedKg: number;
+  co2SavedKg: number;
+  routeCoordinates: [number, number][]; // [lat, lng][]
+  color: string;
+  stops: OptimizedRouteStop[];
+}
+
+export interface MultiVehicleAiOptimizationPlan {
+  id: string;
+  timestamp: string;
+  selectedVehicleCount: number;
+  totalParcelsCount: number;
+  totalWeightKg: number;
+  totalDistanceKm: number;
+  totalDurationMin: number;
+  totalFuelSavedLiters: number;
+  totalKwhConserved: number;
+  totalCo2SavedKg: number;
+  overallFuelEfficiencyScore: number; // 0 - 100
+  averagePayloadUtilizationPct: number;
+  trafficAvoidanceScorePct: number;
+  vehicleRoutes: OptimizedVehicleRouteSequence[];
+  unassignedParcels: Parcel[];
+}
+
+// --- Regional Demand Forecast & Courier Pre-Allocation Types ---
+export type SurgeAlertLevel = 'NORMAL' | 'ELEVATED' | 'HIGH_SURGE' | 'CRITICAL_SURGE';
+
+export interface RegionalDailyForecastPoint {
+  dayLabel: string;
+  dateStr: string;
+  historicalBaseline: number;
+  predictedVolume: number;
+  allocatedCapacity: number;
+  isSurgeDay: boolean;
+  surgeReason?: string;
+}
+
+export interface RegionalDemandForecast {
+  regionId: string;
+  regionName: string;
+  regionCode: string;
+  primaryHubId: string;
+  primaryHubName: string;
+  keyMunicipalities: string[];
+  historicalDailyAvgVolume: number;
+  predictedSurgeVolume: number;
+  surgeFactor: number; // e.g. 1.35 for +35%
+  surgeRiskLevel: SurgeAlertLevel;
+  surgeDriver: string;
+  peakDeliveryWindow: string;
+  currentAllocatedCouriers: number;
+  recommendedCouriers: number;
+  preAllocatedCouriers: number;
+  courierCapacityParcels: number;
+  capacityDelta: number; // positive = surplus, negative = deficit
+  capacityCoveragePct: number;
+  overtimeRiskHours: number;
+  slaSafetyProbabilityPct: number;
+  dailyTimeline: RegionalDailyForecastPoint[];
+}
+
+export interface RegionalCapacityPreAllocationPlan {
+  id: string;
+  tenantId: string;
+  updatedAt: string;
+  totalPredictedVolume: number;
+  totalCourierCapacity: number;
+  overallCoveragePct: number;
+  activeSurgeZonesCount: number;
+  allocations: Record<string, number>; // regionId -> courier count
+  notes: string;
+  status: 'DRAFT' | 'COMMITTED';
+}
+
+// --- Compliance Audit & Safety Protocol Deviation Types ---
+export type RegulatoryFramework = 
+  | 'DOT_FMCSA'      // Hours of service, continuous drive duration, cargo stability
+  | 'OSHA_SAFETY'    // Material handling, heavy package lift limits (>25kg dual operator)
+  | 'FDA_GDP'        // Good Distribution Practice, perishable cold-chain integrity
+  | 'ISO_28000'      // Supply chain security, chain-of-custody seal & cryptographic hashes
+  | 'EPA_CLEAN_AIR'; // Green corridor fleet emissions & excessive vehicle idling
+
+export type SafetyDeviationSeverity = 'CRITICAL' | 'WARNING' | 'MINOR';
+export type SafetyDeviationStatus = 'FLAGGED' | 'UNDER_INVESTIGATION' | 'CAPA_SUBMITTED' | 'RESOLVED_CLEARED';
+
+export type SafetyDeviationCategory = 
+  | 'COLD_CHAIN_TEMPERATURE_BREACH'
+  | 'HEAVY_LIFT_PROTOCOL_BREACH'
+  | 'EXCESSIVE_COURIER_HOURS'
+  | 'CHAIN_OF_CUSTODY_HASH_MISMATCH'
+  | 'UNATTENDED_DELIVERY_BREACH'
+  | 'DWELL_TIME_EXCEEDED'
+  | 'SPEED_GOVERNOR_EXCEEDED';
+
+export interface CustodyHandoffRecord {
+  handoffId: string;
+  parcelId: string;
+  trackingNumber: string;
+  fromPartyName: string;
+  fromPartyRole: string;
+  toPartyName: string;
+  toPartyRole: string;
+  locationName: string;
+  timestamp: string;
+  eventType: CustodyEventType;
+  verificationHash: string;
+  hashIntegrityStatus: 'VERIFIED' | 'TAMPER_ALERT' | 'UNVERIFIED';
+  dwellMinutes: number;
+  hasSafetyDeviation: boolean;
+  deviationCategory?: SafetyDeviationCategory;
+  deviationSeverity?: SafetyDeviationSeverity;
+}
+
+export interface SafetyProtocolDeviation {
+  id: string;
+  parcelId: string;
+  trackingNumber: string;
+  framework: RegulatoryFramework;
+  severity: SafetyDeviationSeverity;
+  category: SafetyDeviationCategory;
+  title: string;
+  description: string;
+  timestamp: string;
+  locationName: string;
+  responsibleParty: {
+    id: string;
+    name: string;
+    role: string;
+  };
+  regulatoryStandard: string; // e.g. "49 CFR § 395.3", "OSHA 1910.176", "21 CFR Part 11 / GDP"
+  correctiveActionPlan: string; // CAPA protocol
+  status: SafetyDeviationStatus;
+  evidenceNotes: string;
+  resolvedAt?: string;
+  resolvedBy?: string;
+  auditorNotes?: string;
+}
+
+export interface RegulatoryAuditReportSummary {
+  auditPeriod: string;
+  generatedAt: string;
+  tenantId: string;
+  tenantName: string;
+  complianceHealthScore: number; // 0 - 100%
+  totalCustodyHandoffs: number;
+  verifiedHandoffsCount: number;
+  custodyIntegrityRate: number; // e.g. 98.4%
+  totalDeviationsCount: number;
+  criticalDeviationsCount: number;
+  warningDeviationsCount: number;
+  resolvedDeviationsCount: number;
+  frameworkScores: Record<RegulatoryFramework, number>;
+  auditReadinessStatus: 'FULLY_COMPLIANT' | 'NEEDS_ATTENTION' | 'NON_COMPLIANT';
+}
+
+// --- Energy Efficiency & Fleet Sustainability Trend Types ---
+export interface MonthlyEnergyEfficiencyPoint {
+  month: string;           // e.g. "Nov 2025"
+  shortMonth: string;      // e.g. "Nov"
+  isProjected: boolean;
+  totalDistanceKm: number;
+  dieselLiters: number;
+  electricityKWh: number;
+  dieselCostUsd: number;
+  electricityCostUsd: number;
+  totalEnergyCostUsd: number;
+  co2EmissionsKg: number;
+  co2AvoidedKg: number;
+  netCo2MetricTons: number;
+  co2AvoidedMetricTons: number;
+  efficiencyLPer100KmEq: number; // Fleet equivalent L/100km
+  evFleetSharePct: number;       // % fleet electrification
+  targetCo2MetricTons: number;   // ESG Net-Zero milestone target
+  activeVehiclesCount: number;
+}
+
+export interface FleetSustainabilitySummary {
+  totalDistanceKm12M: number;
+  totalDieselLiters12M: number;
+  totalElectricityKWh12M: number;
+  totalCo2EmissionsTons12M: number;
+  totalCo2AvoidedTons12M: number;
+  co2ReductionYoYPct: number;
+  currentFleetEfficiencyL100km: number;
+  efficiencyImprovementPct: number;
+  totalEnergySavingsUsd12M: number;
+  currentEvFleetPct: number;
+  target2027EvFleetPct: number;
+  esgSustainabilityRating: 'LEADERSHIP_A' | 'EXCELLENT_B' | 'TRANSITIONING_C';
+}
+
+// --- Fleet ROI Calculator & EV Financial Modeling Types ---
+export interface FleetRoiModelInputs {
+  convertedVehiclesCount: number;
+  dailyMileageKm: number;
+  annualOperatingDays: number;
+  dieselConsumptionL100km: number;
+  dieselPricePerLiter: number;
+  evConsumptionKWh100km: number;
+  electricityPricePerKWh: number;
+  evPurchasePremiumPerVehicle: number; // CapEx delta vs internal combustion
+  chargerCostPerVehicle: number;       // Level 2 / Depot DC charger
+  govSubsidiesPerVehicle: number;      // IRA 45W / State Clean Fuel Rebates
+  carbonCreditPricePerTon: number;     // Carbon offsets / LCFS credit price
+  dieselMaintCostPerKm: number;        // Oil, filters, transmission, brakes
+  evMaintCostPerKm: number;            // Regenerative braking, zero oil changes
+  discountRatePct: number;             // Discount rate for NPV calculation (e.g. 6%)
+  analysisYears: number;               // Modeling horizon (e.g. 5 or 7 years)
+}
+
+export interface CashFlowYearPoint {
+  year: number;
+  label: string;
+  annualCashFlow: number;
+  cumulativeCashFlow: number;
+  dieselTco: number;
+  evTco: number;
+  fuelSavings: number;
+  maintSavings: number;
+  carbonCredits: number;
+}
+
+export interface FleetRoiModelOutputs {
+  annualFuelSavingsUsd: number;
+  annualMaintenanceSavingsUsd: number;
+  annualCarbonCreditRevenueUsd: number;
+  annualNetOperatingSavingsUsd: number;
+  totalInitialNetCapExUsd: number;
+  paybackPeriodYears: number;
+  fiveYearNetSavingsUsd: number;
+  fiveYearNpvUsd: number;
+  fiveYearRoiPct: number;
+  annualCo2AbatedMetricTons: number;
+  fiveYearCo2AbatedMetricTons: number;
+  cashFlowTimeline: CashFlowYearPoint[];
+  tcoComparison: {
+    diesel5YearTco: number;
+    ev5YearTco: number;
+    tcoSavingsUsd: number;
+    tcoSavingsPct: number;
+  };
+}
+
+// --- Customer Delivery Feedback & Experience Rating Types ---
+export type DeliveryIssueType = 
+  | 'DAMAGED_PACKAGE'
+  | 'LATE_DELIVERY'
+  | 'INSECURE_LOCATION'
+  | 'MISSING_SIGNATURE'
+  | 'INCORRECT_ADDRESS'
+  | 'POOR_COMMUNICATION'
+  | 'RUDE_COURIER'
+  | 'WEATHER_MISHANDLING';
+
+export interface CustomerParcelFeedback {
+  id: string;
+  parcelId: string;
+  trackingNumber: string;
+  tenantId: string;
+  customerId: string;
+  customerName: string;
+  customerCompany?: string;
+  overallRating: number; // 1 to 5 stars
+  aspectRatings: {
+    deliverySpeed: number;        // 1 to 5
+    packageCondition: number;     // 1 to 5
+    courierCourtesy: number;      // 1 to 5
+    trackingTransparency: number; // 1 to 5
+  };
+  reportedIssues: DeliveryIssueType[];
+  comments: string;
+  wouldRecommend: boolean; // NPS Promoter / Detractor
+  submittedAt: string;
+  courierId?: string;
+  courierName?: string;
+  status: 'SUBMITTED' | 'REVIEWED' | 'REMEDIED';
+}
+
+export interface CustomerFeedbackAnalyticsSummary {
+  totalReviewsCount: number;
+  averageCsatScore: number; // 1.0 - 5.0
+  netPromoterScore: number; // -100 to +100
+  ratingDistribution: {
+    1: number;
+    2: number;
+    3: number;
+    4: number;
+    5: number;
+  };
+  issueFrequency: Array<{
+    issue: DeliveryIssueType;
+    label: string;
+    count: number;
+    pct: number;
+  }>;
+  aspectAverages: {
+    speed: number;
+    condition: number;
+    courtesy: number;
+    tracking: number;
+  };
+  recentFeedback: CustomerParcelFeedback[];
+}
+
+
+
+
+
+

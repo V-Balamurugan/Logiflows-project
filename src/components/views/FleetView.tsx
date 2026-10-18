@@ -9,13 +9,15 @@ import {
   CheckCircle2, 
   Fuel, 
   TrendingUp, 
+  TrendingDown,
   Sliders, 
   Wrench, 
   Send, 
   Radio,
   Trophy,
   Leaf,
-  Activity
+  Activity,
+  Network
 } from 'lucide-react';
 import { storage } from '../../services/storage';
 import { FleetFuelConsumptionMonitor } from '../analytics/FleetFuelConsumptionMonitor';
@@ -25,13 +27,15 @@ import { MassDispatchModule } from '../fleet/MassDispatchModule';
 import { DriverPerformanceLeaderboard } from '../fleet/DriverPerformanceLeaderboard';
 import { RouteCarbonEstimatorModule } from '../fleet/RouteCarbonEstimatorModule';
 import { VehicleHealthMonitor } from '../fleet/VehicleHealthMonitor';
+import { CapacityBalancingEngine } from '../fleet/CapacityBalancingEngine';
+import { EnergyEfficiencyTrendChart } from '../fleet/EnergyEfficiencyTrendChart';
 
 export const FleetView: React.FC = () => {
   const currentTenantId = storage.getActiveTenantId();
   const vehicles = storage.getVehicles(currentTenantId);
   const [activeTab, setActiveTab] = useState<
-    'health_monitor' | 'route_carbon' | 'driver_leaderboard' | 'maintenance_predictive' | 'mass_dispatch' | 'fuel_monitor' | 'vehicle_grid' | 'geofence_setup'
-  >('health_monitor');
+    'capacity_balancing' | 'energy_efficiency' | 'health_monitor' | 'route_carbon' | 'driver_leaderboard' | 'maintenance_predictive' | 'mass_dispatch' | 'fuel_monitor' | 'vehicle_grid' | 'geofence_setup'
+  >('energy_efficiency');
 
   const electricCount = vehicles.filter((v) => v.type === 'ELECTRIC_VAN' || v.type === 'CARGO_EBIKE').length;
   const onRouteCount = vehicles.filter((v) => v.status === 'ON_ROUTE').length;
@@ -40,20 +44,42 @@ export const FleetView: React.FC = () => {
     <div className="space-y-6 animate-fade-in">
       <div className="flex flex-wrap items-center justify-between gap-4 p-5 rounded-xl bg-slate-900 border border-slate-800">
         <div>
-          <span className="text-[10px] font-mono uppercase tracking-wider text-rose-400 font-bold block mb-0.5">
-            CONNECTED TELEMETRY · VEHICLE HEALTH MONITOR, EMISSIONS & FLEET OPERATIONS
+          <span className="text-[10px] font-mono uppercase tracking-wider text-indigo-400 font-bold block mb-0.5">
+            CAPACITY BALANCING ENGINE · PREDICTIVE HUB CONGESTION & IDLE REDUCTION
           </span>
           <h2 className="text-xl font-bold text-slate-100 flex items-center gap-2">
-            <Activity className="w-5 h-5 text-rose-400" />
-            <span>Logistics Fleet Operations & Telemetric Health Intelligence</span>
+            <Network className="w-5 h-5 text-indigo-400" />
+            <span>Fleet Operations, Capacity Balancing & Predictive Network Engine</span>
           </h2>
           <p className="text-xs text-slate-400 mt-0.5">
-            Simulated IoT telemetry alerts, maintenance interval monitors, route carbon estimations, and driver performance leaderboards.
+            Predicts future intake hub congestion, loading dock dwell times, and automatically reroutes commercial vehicles to eliminate idle waste.
           </p>
         </div>
 
         {/* View Tabs */}
         <div className="flex flex-wrap items-center gap-1.5 p-1 rounded-xl bg-slate-950 border border-slate-800 text-xs font-semibold">
+          <button
+            onClick={() => setActiveTab('capacity_balancing')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all ${
+              activeTab === 'capacity_balancing'
+                ? 'bg-indigo-600 text-white font-bold shadow-md shadow-indigo-600/20'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+            }`}
+          >
+            <Network className="w-4 h-4 text-indigo-300" />
+            <span>Capacity Balancing</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('energy_efficiency')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all ${
+              activeTab === 'energy_efficiency'
+                ? 'bg-emerald-600 text-white font-bold shadow-md shadow-emerald-600/20'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+            }`}
+          >
+            <TrendingDown className="w-4 h-4 text-emerald-300" />
+            <span>Energy Efficiency Trend</span>
+          </button>
           <button
             onClick={() => setActiveTab('health_monitor')}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all ${
@@ -151,6 +177,16 @@ export const FleetView: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Tab: Capacity Balancing Engine & Predictive Hub Rerouting */}
+      {activeTab === 'capacity_balancing' && (
+        <CapacityBalancingEngine vehicles={vehicles} />
+      )}
+
+      {/* Tab: Energy Efficiency Trend & Long-Term Fleet Sustainability */}
+      {activeTab === 'energy_efficiency' && (
+        <EnergyEfficiencyTrendChart vehicles={vehicles} />
+      )}
 
       {/* Tab -2: Vehicle Health Monitor & Simulated Telemetry */}
       {activeTab === 'health_monitor' && (

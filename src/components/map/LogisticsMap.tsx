@@ -51,6 +51,9 @@ import {
 import { PredictiveDelayWidget } from '../intelligence/PredictiveDelayWidget';
 import { geofenceService, calculateDistanceKm } from '../../services/geofenceService';
 import { GeofenceModuleModal } from './GeofenceModuleModal';
+import { RouteOptimizationAI } from './RouteOptimizationAI';
+import { MultiVehicleAiOptimizationPlan } from '../../types';
+import { routeOptimizationAiService } from '../../services/routeOptimizationAiService';
 
 interface Props {
   hubs: BranchHub[];
@@ -86,6 +89,8 @@ export const LogisticsMap: React.FC<Props> = ({
   const [activeOptimizedRoute, setActiveOptimizedRoute] = useState<OptimizedRouteResult | null>(null);
   const [activeMultiStopPlan, setActiveMultiStopPlan] = useState<MultiStopPlanResult | null>(null);
   const [isAutoOptimizeOpen, setIsAutoOptimizeOpen] = useState(false);
+  const [isRouteOptAiOpen, setIsRouteOptAiOpen] = useState(false);
+  const [activeAiPlan, setActiveAiPlan] = useState<MultiVehicleAiOptimizationPlan | null>(null);
   const [isMultiStopPlannerOpen, setIsMultiStopPlannerOpen] = useState(false);
   const [isReoptimizeModalOpen, setIsReoptimizeModalOpen] = useState(false);
   const [isReoptimizing, setIsReoptimizing] = useState(false);
@@ -1048,6 +1053,189 @@ export const LogisticsMap: React.FC<Props> = ({
     setActiveMultiStopPlan(null);
   };
 
+  const handleApplyAiOptimizationPlan = (plan: MultiVehicleAiOptimizationPlan) => {
+    setActiveAiPlan(plan);
+    setActiveOptimizedRoute(null);
+    setActiveMultiStopPlan(null);
+    setActiveOrsResult(null);
+
+    const map = mapInstanceRef.current;
+    const orsLayer = orsLayerRef.current;
+    if (!map || !orsLayer) return;
+
+    orsLayer.clearLayers();
+
+    const allPoints: [number, number][] = [];
+
+    plan.vehicleRoutes.forEach((route) => {
+      const color = route.color || '#10b981';
+
+      // 1. Vehicle Origin Marker
+      if (route.routeCoordinates.length > 0) {
+        const startCoord = route.routeCoordinates[0];
+        allPoints.push(startCoord);
+
+        const startHtml = `
+          <div style="
+            background: #020617;
+            border: 2px solid ${color};
+            border-radius: 9999px;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: ${color};
+            font-weight: 800;
+            font-size: 12px;
+            box-shadow: 0 4px 14px rgba(0,0,0,0.8);
+            position: relative;
+          ">
+            <span>⚡</span>
+            <div style="
+              position: absolute;
+              bottom: -16px;
+              left: 50%;
+              transform: translateX(-50%);
+              background: #0f172a;
+              color: ${color};
+              font-size: 8px;
+              font-family: monospace;
+              font-weight: 700;
+              padding: 1px 4px;
+              border-radius: 4px;
+              border: 1px solid ${color}40;
+              white-space: nowrap;
+            ">${route.vehicleNumber}</div>
+          </div>
+        `;
+        const startIcon = L.divIcon({
+          html: startHtml,
+          className: 'custom-ai-veh-start',
+          iconSize: [32, 32],
+          iconAnchor: [16, 16],
+        });
+        const startMarker = L.marker(startCoord, { icon: startIcon });
+        startMarker.bindPopup(`
+          <div style="font-family: inherit; color:#0f172a; min-width: 175px;">
+            <div style="font-weight:700; font-size:12px; color:${color};">AI Sequence Origin</div>
+            <div style="font-weight:600; font-size:12px;">${route.vehicleNumber} (${route.driverName})</div>
+            <div style="font-size:11px; color:#475569;">Stops: ${route.totalStops} · Distance: ${route.totalDistanceKm} km</div>
+            <div style="font-size:11px; color:#475569;">Fuel: ${route.fuelConsumedAmount} ${route.fuelType === 'ELECTRIC' ? 'kWh' : 'L'}</div>
+          </div>
+        `);
+        orsLayer.addLayer(startMarker);
+      }
+
+      // 2. Route Corridor Lines
+      if (route.routeCoordinates.length > 1) {
+        route.routeCoordinates.forEach((c) => allPoints.push(c));
+
+        // Casing for contrast
+        const casing = L.polyline(route.routeCoordinates, {
+          color: '#020617',
+          weight: 7,
+          opacity: 0.85,
+        });
+        orsLayer.addLayer(casing);
+
+        // Colored route line
+        const poly = L.polyline(route.routeCoordinates, {
+          color,
+          weight: 4,
+          opacity: 0.95,
+          lineCap: 'round',
+          lineJoin: 'round',
+        });
+        poly.bindTooltip(
+          `${route.vehicleNumber} (${route.driverName}) · ${route.totalStops} stops · Eco Score: ${route.fuelEfficiencyScore}/100`,
+          { sticky: true }
+        );
+        orsLayer.addLayer(poly);
+      }
+
+      // 3. Numbered Stop Markers
+      route.stops.forEach((stop) => {
+        allPoints.push([stop.lat, stop.lng]);
+
+        const stopHtml = `
+          <div style="
+            background: #020617;
+            border: 2px solid ${color};
+            border-radius: 50%;
+            width: 26px;
+            height: 26px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #ffffff;
+            font-weight: 800;
+            font-size: 11px;
+            font-family: monospace;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.7);
+            position: relative;
+          ">
+            ${stop.sequenceNumber}
+            <div style="
+              position: absolute;
+              top: -14px;
+              left: 50%;
+              transform: translateX(-50%);
+              background: ${color};
+              color: #020617;
+              font-size: 7px;
+              font-weight: 900;
+              padding: 0 3px;
+              border-radius: 3px;
+              white-space: nowrap;
+            ">${stop.estimatedArrivalClock}</div>
+          </div>
+        `;
+
+        const stopIcon = L.divIcon({
+          html: stopHtml,
+          className: 'ai-optimized-stop-pin',
+          iconSize: [26, 26],
+          iconAnchor: [13, 13],
+        });
+
+        const stopMarker = L.marker([stop.lat, stop.lng], { icon: stopIcon });
+        stopMarker.bindPopup(`
+          <div style="font-family: inherit; color:#0f172a; min-width: 200px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px;">
+              <span style="font-weight:800; font-size:11px; color:${color};">${route.vehicleNumber} · STOP #${stop.sequenceNumber}</span>
+              <span style="font-size:10px; background:#e0e7ff; color:#3730a3; padding:1px 4px; border-radius:4px; font-weight:700;">ETA ${stop.estimatedArrivalClock}</span>
+            </div>
+            <div style="font-weight:700; font-size:12px;">${stop.recipientName}</div>
+            <div style="font-size:11px; color:#475569;">${stop.street}, ${stop.city}</div>
+            <div style="margin-top:4px; font-size:11px; display:flex; justify-content:space-between;">
+              <span>Drop Load: <strong>${stop.weightKg} kg</strong></span>
+              <span>Remaining: <strong>${stop.remainingPayloadKg} kg</strong></span>
+            </div>
+            <div style="font-size:10px; color:#64748b; margin-top:2px;">
+              Traffic: <strong style="color:${stop.trafficCondition === 'FREE_FLOW' ? '#16a34a' : '#d97706'}">${stop.trafficCondition}</strong> · Leg: ${stop.legDistanceKm} km
+            </div>
+            <div style="font-size:10px; color:#4338ca; margin-top:3px; font-family:monospace;">
+              ${stop.trackingNumber} (${stop.serviceTier.replace(/_/g, ' ')})
+            </div>
+          </div>
+        `);
+        orsLayer.addLayer(stopMarker);
+      });
+    });
+
+    if (allPoints.length > 0) {
+      map.fitBounds(L.latLngBounds(allPoints), { padding: [50, 50] });
+    }
+  };
+
+  const handleClearAiPlan = () => {
+    if (orsLayerRef.current) {
+      orsLayerRef.current.clearLayers();
+    }
+    setActiveAiPlan(null);
+  };
+
   // Re-calculate waypoints based on real-time traffic and parcel priority levels
   const handleReoptimizeRoute = async () => {
     setIsReoptimizing(true);
@@ -1659,6 +1847,15 @@ export const LogisticsMap: React.FC<Props> = ({
         </button>
 
         <button
+          onClick={() => setIsRouteOptAiOpen(true)}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-500 hover:to-teal-500 text-white rounded-lg shadow-xl backdrop-blur-md transition-all hover:scale-[1.02] border border-emerald-400/40 ring-1 ring-emerald-400/20"
+          title="Route Optimization AI: Sequence fleet deliveries to minimize fuel & avoid congestion"
+        >
+          <Sparkles className="w-3.5 h-3.5 text-emerald-200" />
+          <span>Route Optimization AI</span>
+        </button>
+
+        <button
           onClick={() => setShowOrsToolbox(!showOrsToolbox)}
           className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg shadow-xl backdrop-blur-md transition-colors ${
             showOrsToolbox
@@ -2008,6 +2205,55 @@ export const LogisticsMap: React.FC<Props> = ({
         </div>
       )}
 
+      {/* Floating Active Route Optimization AI Plan Banner */}
+      {activeAiPlan && (
+        <div className="absolute top-14 left-3 z-20 flex flex-col gap-2 max-w-xl animate-fade-in">
+          <div className="flex flex-wrap items-center justify-between gap-2.5 bg-slate-900/95 backdrop-blur-md px-3.5 py-2.5 rounded-xl border border-emerald-500/50 shadow-2xl text-xs">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                <Sparkles className="w-4 h-4" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-slate-100">
+                    Route Optimization AI Plan:
+                  </span>
+                  <span className="text-emerald-300 font-mono font-bold">
+                    {activeAiPlan.selectedVehicleCount} Vehicles · {activeAiPlan.totalParcelsCount} Stops
+                  </span>
+                  <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono text-[10px] font-bold border border-emerald-500/30">
+                    {activeAiPlan.overallFuelEfficiencyScore}/100 ECO
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 text-[11px] text-slate-400 mt-0.5 font-mono">
+                  <span>{activeAiPlan.totalDistanceKm} km</span>
+                  <span>·</span>
+                  <span className="text-emerald-400 font-bold">-{activeAiPlan.totalFuelSavedLiters}L diesel saved</span>
+                  <span>·</span>
+                  <span className="text-emerald-400 font-bold">-{activeAiPlan.totalCo2SavedKg} kg CO₂</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setIsRouteOptAiOpen(true)}
+                className="px-2.5 py-1 text-[11px] font-bold text-white bg-indigo-600 hover:bg-indigo-500 rounded transition-colors shadow-sm"
+              >
+                Inspect Plan
+              </button>
+              <button
+                onClick={handleClearAiPlan}
+                className="px-2 py-1 text-[11px] font-medium text-rose-300 hover:text-rose-100 hover:bg-rose-950/60 rounded transition-colors"
+                title="Clear AI Overlay from map"
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Map Content Mount */}
       {mapProvider === 'GOOGLE_MAPS' ? (
         <GoogleLogisticsMap
@@ -2174,6 +2420,16 @@ export const LogisticsMap: React.FC<Props> = ({
             mapInstanceRef.current.setView([zone.centerLat, zone.centerLng], 12);
           }
         }}
+      />
+
+      {/* Route Optimization AI Multi-Vehicle Sequence Planner */}
+      <RouteOptimizationAI
+        isOpen={isRouteOptAiOpen}
+        onClose={() => setIsRouteOptAiOpen(false)}
+        vehicles={vehicles}
+        parcels={parcels}
+        hubs={hubs}
+        onPreviewPlanOnMap={handleApplyAiOptimizationPlan}
       />
     </div>
   );

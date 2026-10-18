@@ -23,6 +23,8 @@ const INITIAL_MAINTENANCE_LOGS: MaintenanceLogEntry[] = [
     notes: 'HV battery cell balancing complete. SOH verified at 94.8%. Regenerative braking calibration verified.',
     nextServiceOdometerKm: 40000,
     nextServiceDate: '2027-02-15',
+    engineHoursAtService: 1150,
+    nextServiceEngineHours: 1750,
     criticalStatus: 'GOOD',
     performedItems: ['HV Battery Cell Balancing', 'Coolant Loop Flush', 'Inverter Firmware Update', 'Regen Sensor Check']
   },
@@ -39,6 +41,8 @@ const INITIAL_MAINTENANCE_LOGS: MaintenanceLogEntry[] = [
     notes: 'Synthetic 5W-30 oil and OEM filter replacement. Brake pads measured at 4.2mm (monitor closely).',
     nextServiceOdometerKm: 58500,
     nextServiceDate: '2026-11-10',
+    engineHoursAtService: 2050,
+    nextServiceEngineHours: 2450,
     criticalStatus: 'OVERDUE',
     performedItems: ['Synthetic Oil Flush', 'Air & Fuel Filter Change', 'Brake Pad Lining Inspection', 'Chassis Lube']
   },
@@ -55,6 +59,8 @@ const INITIAL_MAINTENANCE_LOGS: MaintenanceLogEntry[] = [
     notes: 'Heavy duty Allison transmission fluid service and differential fluid exchange. Air brake valves pressure tested.',
     nextServiceOdometerKm: 185000,
     nextServiceDate: '2026-10-25',
+    engineHoursAtService: 4500,
+    nextServiceEngineHours: 5000,
     criticalStatus: 'UPCOMING',
     performedItems: ['Transmission Fluid Exchange', 'Pneumatic Air Brake Test', 'Fifth Wheel Grease', 'Steering Linkage Check']
   },
@@ -71,6 +77,8 @@ const INITIAL_MAINTENANCE_LOGS: MaintenanceLogEntry[] = [
     notes: 'Hydraulic disc brake bleed and sintered pad replacement. Chain tension and torque sensor checked.',
     nextServiceOdometerKm: 5000,
     nextServiceDate: '2027-01-10',
+    engineHoursAtService: 240,
+    nextServiceEngineHours: 420,
     criticalStatus: 'GOOD',
     performedItems: ['Hydraulic Brake Bleed', 'Sintered Pad Set', 'Chain Waxing & Tension', 'Torque Sensor Calibration']
   },
@@ -87,6 +95,8 @@ const INITIAL_MAINTENANCE_LOGS: MaintenanceLogEntry[] = [
     notes: 'Four-wheel rotation and high-speed balancing. Front alignment adjusted +0.2 deg toe-in.',
     nextServiceOdometerKm: 52000,
     nextServiceDate: '2027-02-28',
+    engineHoursAtService: 1720,
+    nextServiceEngineHours: 2200,
     criticalStatus: 'GOOD',
     performedItems: ['4-Wheel Tire Rotation', 'Laser Alignment', 'TPMS Sensor Sync', 'Suspension Bushing Lube']
   }
@@ -265,12 +275,40 @@ class FleetMaintenanceService {
       ? `PREVENTATIVE ACTION: Schedule service within ${projectedFailureKm.toLocaleString()} km to prevent roadside mechanical fault.`
       : 'Fleet unit is in healthy operational status. All telemetry readings within OEM tolerances.';
 
+    const engineHours = vehicle.engineHours ?? Math.round(odometer / 25);
+    const nextEngineHours = lastLog?.nextServiceEngineHours ?? (engineHours + 450);
+    const engineHoursRemaining = nextEngineHours - engineHours;
+    const isHoursOverdue = engineHoursRemaining <= 0;
+    const isMileageOverdue = lastLog ? (odometer >= lastLog.nextServiceOdometerKm) : false;
+
+    // Multi-factor Service Due indicator driven by both engine hours and mileage thresholds
+    const isServiceDue = isHoursOverdue || isMileageOverdue || riskLevel === 'CRITICAL' || maxWear >= 85;
+    const serviceDuePriority: 'HIGH' | 'CRITICAL' | 'NORMAL' = 
+      (isHoursOverdue && isMileageOverdue) || maxWear >= 88 ? 'CRITICAL' :
+      isServiceDue ? 'HIGH' : 'NORMAL';
+
+    let serviceDueReason = '';
+    if (isHoursOverdue && isMileageOverdue) {
+      serviceDueReason = `Dual threshold exceeded: Engine hours (${engineHours.toLocaleString()} / ${nextEngineHours.toLocaleString()} hrs) & Odometer (${odometer.toLocaleString()} / ${(lastLog?.nextServiceOdometerKm || 0).toLocaleString()} km)`;
+    } else if (isHoursOverdue) {
+      serviceDueReason = `Engine operating hours limit exceeded: ${engineHours.toLocaleString()} hrs (threshold: ${nextEngineHours.toLocaleString()} hrs)`;
+    } else if (isMileageOverdue) {
+      serviceDueReason = `Odometer service milestone exceeded: ${odometer.toLocaleString()} km (threshold: ${(lastLog?.nextServiceOdometerKm || 0).toLocaleString()} km)`;
+    } else if (riskLevel === 'CRITICAL') {
+      serviceDueReason = `Predictive telemetry alert: High mechanical component wear (${maxWear}%) requires immediate shop service`;
+    }
+
     return {
       vehicleId: vehicle.id,
       vehicleNumber: vehicle.vehicleNumber,
       overallHealthScore: healthScore,
       failureRiskLevel: riskLevel,
       projectedFailureKm,
+      engineHours,
+      engineHoursRemaining,
+      isServiceDue,
+      serviceDuePriority,
+      serviceDueReason,
       telemetryFactors: {
         brakeWearPct,
         batteryDegradationOrEngineThermalStress: batteryOrThermalStress,

@@ -529,6 +529,47 @@ export class LogisticsStorageService {
     return true;
   }
 
+  public addCustodyEvent(
+    parcelId: string, 
+    eventData: {
+      eventType: CustodyEventType;
+      locationName?: string;
+      operatorName?: string;
+      operatorRole?: string;
+      operatorId?: string;
+      notes: string;
+      verificationHash?: string;
+      lat?: number;
+      lng?: number;
+    }
+  ): boolean {
+    const raw = localStorage.getItem(STORAGE_KEYS.PARCELS);
+    const parcels: Parcel[] = raw ? JSON.parse(raw) : INITIAL_PARCELS;
+    const index = parcels.findIndex((p) => p.id === parcelId);
+    if (index === -1) return false;
+
+    const user = this.getCurrentUser();
+    const event: CustodyEvent = {
+      id: `evt-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`,
+      parcelId,
+      timestamp: new Date().toISOString(),
+      eventType: eventData.eventType,
+      locationName: eventData.locationName || 'Dispatch Logistics Control',
+      lat: eventData.lat,
+      lng: eventData.lng,
+      operatorName: eventData.operatorName || user.name,
+      operatorRole: (eventData.operatorRole as any) || user.role,
+      operatorId: eventData.operatorId || user.id,
+      notes: eventData.notes,
+      verificationHash: eventData.verificationHash || generateVerificationHash(),
+    };
+
+    parcels[index].custodyEvents.push(event);
+    localStorage.setItem(STORAGE_KEYS.PARCELS, JSON.stringify(parcels));
+    this.notify();
+    return true;
+  }
+
   public reorderCourierStops(
     courierId: string,
     orderedParcelIds: string[],

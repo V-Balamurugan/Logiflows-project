@@ -234,10 +234,15 @@ export const FleetMaintenanceModule: React.FC<Props> = ({ vehicles }) => {
                 {/* Header with Health Score */}
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-mono text-base font-bold text-slate-100">
                         {pred.vehicleNumber}
                       </span>
+                      {pred.isServiceDue && (
+                        <span className="px-2 py-0.5 text-[10px] font-mono font-black rounded-full bg-rose-600 text-white shadow-sm shadow-rose-900/40 animate-pulse">
+                          SERVICE DUE
+                        </span>
+                      )}
                       <span className={`px-2 py-0.5 text-[10px] font-mono font-bold rounded-full border ${
                         isCritical
                           ? 'bg-rose-500/20 text-rose-300 border-rose-500/40 animate-pulse'
@@ -251,7 +256,7 @@ export const FleetMaintenanceModule: React.FC<Props> = ({ vehicles }) => {
                       </span>
                     </div>
                     <span className="text-xs text-slate-400 font-mono mt-0.5 block">
-                      {veh?.type.replace(/_/g, ' ')} · Odo: {(veh?.odometerKm || 0).toLocaleString()} km
+                      {veh?.type.replace(/_/g, ' ')} · Odo: {(veh?.odometerKm || 0).toLocaleString()} km · Engine: {(veh?.engineHours || pred.engineHours || 0).toLocaleString()} hrs
                     </span>
                   </div>
 

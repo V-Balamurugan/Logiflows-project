@@ -43,6 +43,11 @@ import {
 import { storage } from '../../services/storage';
 import { mockWeatherService } from '../../services/mockWeatherService';
 import { Parcel, ParcelStatus, ServiceTier } from '../../types';
+import { MonthlyRevenueProjectionChart } from './MonthlyRevenueProjectionChart';
+import { RegionalDemandForecastModule } from './RegionalDemandForecastModule';
+import { ComplianceAuditModule } from './ComplianceAuditModule';
+import { FleetRoiCalculator } from './FleetRoiCalculator';
+import { CustomerFeedbackAnalyticsScorecard } from './CustomerFeedbackAnalyticsScorecard';
 
 // 7-day, 14-day, and 30-day realistic historical logistics data
 const RAW_METRICS_DATA = [
@@ -491,6 +496,21 @@ export const PerformanceMetricsView: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Monthly Revenue Projection: Historical Income vs Forecasted Growth Trends */}
+      <MonthlyRevenueProjectionChart parcels={parcels} tenantName={tenant?.name} />
+
+      {/* Regional Demand Forecast: Historical Parcel Volume Surge Prediction & Courier Capacity Pre-Allocation */}
+      <RegionalDemandForecastModule parcels={parcels} tenantName={tenant?.name} />
+
+      {/* Compliance Audit Module: Chain-of-Custody Handoff Tracking & Safety Protocol Deviation Governance */}
+      <ComplianceAuditModule parcels={parcels} tenantName={tenant?.name} />
+
+      {/* Fleet ROI Calculator: Financial Impact of EV Transition, Fuel Cost Savings & Carbon Tax Credits */}
+      <FleetRoiCalculator parcels={parcels} tenantName={tenant?.name} />
+
+      {/* Customer Feedback & Quality Scorecard: CSAT, NPS & Per-Parcel Issue Analytics */}
+      <CustomerFeedbackAnalyticsScorecard tenantName={tenant?.name} />
 
       {/* Grid of Recharts Visualizations */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
